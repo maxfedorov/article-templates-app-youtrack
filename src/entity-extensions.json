@@ -1,0 +1,29 @@
+{
+  "entityTypeExtensions": [
+    {
+      "entityType": "AppGlobalStorage",
+      "properties": {
+        "templates": {
+          "type": "string"
+        },
+        "deletedTemplates": {
+          "type": "string"
+        },
+        "initialImportDone": {
+          "type": "string"
+        }
+      }
+    },
+    {
+      "entityType": "User",
+      "properties": {
+        "templates": {
+          "type": "string"
+        },
+        "deletedTemplates": {
+          "type": "string"
+        }
+      }
+    }
+  ]
+}

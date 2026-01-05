@@ -1,0 +1,12 @@
+.widget {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--ring-unit) * 2);
+  margin: calc(var(--ring-unit) / 2);
+}
+
+.contentTextarea textarea {
+  overflow-y: auto;
+  min-height: calc(var(--ring-unit) * 7.75);
+  max-height: calc(var(--ring-unit) * 40);
+}

@@ -1,0 +1,51 @@
+{
+  "name": "article-templates-app",
+  "title": "Article templates",
+  "description": "Prepared templates for the article creation.",
+  "$schema": "https://json.schemastore.org/youtrack-app.json",
+  "vendor": {
+    "name": "Maksim Fedorov",
+    "url": "https://github.com/maxfedorov"
+  },
+  "icon": "article-templates-logo.svg",
+  "settingsSchemaPath": "settings.json",
+  "widgets": [
+
+    {
+      "key": "article-templates-dashboard-widget",
+      "name": "Article templates",
+      "indexPath": "article-templates-dashboard-widget/index.html",
+      "extensionPoint": "DASHBOARD_WIDGET",
+      "iconPath": "article-templates-dashboard-widget/widget-icon.svg",
+      "description": "Manage and apply article templates on the dashboard.",
+      "permissions": [
+        "CREATE_ARTICLE"
+      ],
+      "defaultDimensions": {
+        "width": "8fr"
+      }
+    },
+    {
+      "key": "create-template-article-widget",
+      "name": "Create article template",
+      "indexPath": "create-template-article-widget/index.html",
+      "extensionPoint": "ARTICLE_OPTIONS_MENU_ITEM",
+      "iconPath": "create-template-article-widget/widget-icon.svg",
+      "description": "Article menu button to create a template from the current article.",
+      "permissions": [
+        "CREATE_ARTICLE"
+      ]
+    },
+    {
+      "key": "article-templates-project-widget",
+      "name": "Article Templates",
+      "indexPath": "article-templates-project-widget/index.html",
+      "extensionPoint": "PROJECT_SETTINGS",
+      "iconPath": "article-templates-project-widget/widget-icon.svg",
+      "description": "Manage templates and create articles in your project.",
+      "permissions": [
+        "CREATE_ARTICLE"
+      ]
+    }
+  ]
+}

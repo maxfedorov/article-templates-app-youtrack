@@ -1,0 +1,24 @@
+.widget {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--ring-unit) * 2);
+  margin: calc(var(--ring-unit) / 2);
+}
+
+.contentTextarea textarea {
+    overflow-y: auto;
+    min-height: calc(var(--ring-unit) * 7.75);
+    max-height: calc(var(--ring-unit) * 40);
+}
+
+.tableSelect {
+  max-width: 200px;
+  display: inline-block;
+  vertical-align: middle;
+}
+
+.tableSelect button,
+.tableSelect span {
+    max-width: 100%;
+    overflow: hidden !important;
+}

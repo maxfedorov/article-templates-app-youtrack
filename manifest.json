@@ -2,6 +2,7 @@
   "name": "article-templates-app",
   "title": "Article templates",
   "description": "Prepared templates for the article creation.",
+  "version": "1.0.0",
   "$schema": "https://json.schemastore.org/youtrack-app.json",
   "vendor": {
     "name": "Maksim Fedorov",

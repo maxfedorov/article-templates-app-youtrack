@@ -1,7 +1,7 @@
 {
   "name": "article-templates-app",
   "title": "Article templates",
-  "description": "Prepared templates for the article creation.",
+  "description": "Allows you to create and manage article templates, create a template from an existing article, and create new articles from templates to streamline your Knowledge Base workflow.",
   "version": "1.0.0",
   "$schema": "https://json.schemastore.org/youtrack-app.json",
   "vendor": {

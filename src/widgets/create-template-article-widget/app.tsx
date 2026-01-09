@@ -4,6 +4,7 @@ import ButtonSet from '@jetbrains/ring-ui-built/components/button-set/button-set
 import Input, {Size} from '@jetbrains/ring-ui-built/components/input/input';
 import Toggle from '@jetbrains/ring-ui-built/components/toggle/toggle';
 import LoaderInline from '@jetbrains/ring-ui-built/components/loader-inline/loader-inline';
+import Text from '@jetbrains/ring-ui-built/components/text/text';
 import API, {Template} from '../../api';
 import type {AlertType} from "@jetbrains/ring-ui-built/components/alert/alert";
 
@@ -101,6 +102,10 @@ const AppComponent: React.FunctionComponent = () => {
       >
         {'Private Template'}
       </Toggle>
+
+      <Text info style={{fontSize: '12px', color: 'var(--ring-secondary-color)'}}>
+        {'Please note: Article attachments will not be saved in the template.'}
+      </Text>
 
       <ButtonSet>
         <Button 

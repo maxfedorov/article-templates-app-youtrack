@@ -63,7 +63,6 @@ export default defineConfig({
       },
       input: {
         // List every widget entry point here
-        articleTemplatesProjectWidget: resolve(__dirname, 'src/widgets/article-templates-project-widget/index.html'),
 
         createTemplateArticleWidget: resolve(__dirname, 'src/widgets/create-template-article-widget/index.html'),
 

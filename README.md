@@ -5,7 +5,6 @@ Efficiently manage and use article templates in your Knowledge Base. This app he
 ## Features
 
 - **Dashboard Management**: A central hub to view, create, and manage all your article templates.
-- **Project Settings Integration**: Manage templates and create articles directly from the Project Settings page.
 - **Create from Existing Articles**: Easily save any article as a template via the article's options menu.
 - **Predefined Templates**: Comes with templates out of the box.
 - **Quick Create**: Create new article drafts from templates with a single click.

@@ -2,7 +2,7 @@
   "name": "article-templates-app",
   "title": "Article templates",
   "description": "Allows you to create and manage article templates, create a template from an existing article, and create new articles from templates to streamline your Knowledge Base workflow.",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "$schema": "https://json.schemastore.org/youtrack-app.json",
   "vendor": {
     "name": "Maksim Fedorov",
@@ -11,7 +11,6 @@
   "icon": "article-templates-logo.svg",
   "settingsSchemaPath": "settings.json",
   "widgets": [
-
     {
       "key": "article-templates-dashboard-widget",
       "name": "Article templates",
@@ -33,17 +32,6 @@
       "extensionPoint": "ARTICLE_OPTIONS_MENU_ITEM",
       "iconPath": "create-template-article-widget/widget-icon.svg",
       "description": "Article menu button to create a template from the current article.",
-      "permissions": [
-        "CREATE_ARTICLE"
-      ]
-    },
-    {
-      "key": "article-templates-project-widget",
-      "name": "Article Templates",
-      "indexPath": "article-templates-project-widget/index.html",
-      "extensionPoint": "PROJECT_SETTINGS",
-      "iconPath": "article-templates-project-widget/widget-icon.svg",
-      "description": "Manage templates and create articles in your project.",
       "permissions": [
         "CREATE_ARTICLE"
       ]

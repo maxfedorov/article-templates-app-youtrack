@@ -24,10 +24,10 @@ interface BaseAPILayer {
 
 export interface YTUser {
   id: string;
+  ringId: string;
   login: string;
   fullName: string;
   email?: string;
-  ringId: string;
 }
 
 /*

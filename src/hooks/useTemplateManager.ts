@@ -15,6 +15,9 @@ export const useTemplateManager = (host: HostAPI, api: API) => {
   const [filter, setFilter] = useState('');
   const [sortKey, setSortKey] = useState<string | undefined>(undefined);
   const [sortOrder, setSortOrder] = useState<boolean>(true);
+  const [favorites, setFavorites] = useState<string[]>([]);
+  const [showFavoritesOnly, setShowFavoritesOnly] = useState<boolean>(false);
+  const [authorFilter, setAuthorFilter] = useState<string[]>([]);
 
   const onSort = useCallback((params: {column: {id: string}, order: boolean}) => {
     setSortKey(params.column.id);
@@ -24,14 +27,15 @@ export const useTemplateManager = (host: HostAPI, api: API) => {
   const loadData = useCallback(async (additionalLoader?: () => Promise<void>) => {
     setLoading(true);
     try {
-      const [tData, dData, sData] = await Promise.all([
-        api.getTemplates(),
-        api.getDeletedTemplates(),
-        api.getSettings()
+      const [t, d, s, p] = await Promise.all([
+        api.getTemplates(), api.getDeletedTemplates(), api.getSettings(), api.getUserPreferences()
       ]);
-      setTemplates(Array.isArray(tData) ? tData : []);
-      setDeletedTemplates(Array.isArray(dData) ? dData : []);
-      setSettings(sData);
+      setTemplates(Array.isArray(t) ? t : []);
+      setDeletedTemplates(Array.isArray(d) ? d : []);
+      setSettings(s);
+      setFavorites(p.favorites ?? []);
+      setShowFavoritesOnly(!!p.showFavoritesOnly);
+      setAuthorFilter(p.authorFilter ?? []);
       if (additionalLoader) {
         await additionalLoader();
       }
@@ -43,11 +47,42 @@ export const useTemplateManager = (host: HostAPI, api: API) => {
     }
   }, [api]);
 
+  const onToggleFavorite = useCallback(async (id: string) => {
+    try {
+      const newFavs = await api.toggleFavorite(id);
+      setFavorites(newFavs);
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.error('Failed to toggle favorite', e);
+    }
+  }, [api]);
+
+  const onToggleShowFavorites = useCallback(async () => {
+    try {
+      const newVal = await api.toggleShowFavorites();
+      setShowFavoritesOnly(newVal);
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.error('Failed to toggle show favorites', e);
+    }
+  }, [api]);
+
+  const onSetAuthorFilter = useCallback(async (authorIds: string[]) => {
+    setAuthorFilter(authorIds);
+    try {
+      await api.setAuthorFilter(authorIds);
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.error('Failed to set author filter', e);
+    }
+  }, [api]);
+
   const onSave = useCallback(async () => {
     if (!editingTemplate?.name) {
       return;
     }
     try {
+      const isNew = !editingTemplate.id;
       const saved = editingTemplate.id 
         ? await api.updateTemplate(editingTemplate as Template)
         : await api.addTemplate(editingTemplate as Omit<Template, 'id'>);
@@ -56,6 +91,11 @@ export const useTemplateManager = (host: HostAPI, api: API) => {
         ? prev.map(t => (t.id === saved.id ? saved : t))
         : [...prev, saved]
       ));
+      
+      if (isNew) {
+        setFavorites(prev => [...prev, saved.id]);
+      }
+
       setEditingTemplate(null);
       host.alert('Template saved', 'success' as AlertType.SUCCESS);
     } catch (e) {
@@ -98,6 +138,7 @@ export const useTemplateManager = (host: HostAPI, api: API) => {
     try {
       await api.permanentlyDeleteTemplate(id);
       setDeletedTemplates(prev => prev.filter(t => t.id !== id));
+      setFavorites(prev => prev.filter(f => f !== id));
       host.alert('Template permanently deleted', 'success' as AlertType.SUCCESS);
     } catch (e) {
       // eslint-disable-next-line no-console
@@ -171,10 +212,12 @@ export const useTemplateManager = (host: HostAPI, api: API) => {
     editingTemplate, setEditingTemplate,
     selection, setSelection,
     settings,
+    favorites, showFavoritesOnly, authorFilter,
     filter, setFilter,
     sortKey, sortOrder, onSort,
     loadData,
     onSave, onDelete, onRestore, onPermanentDelete,
-    onBulkDelete, onBulkRestore, onImport
+    onBulkDelete, onBulkRestore, onImport,
+    onToggleFavorite, onToggleShowFavorites, onSetAuthorFilter
   };
 };

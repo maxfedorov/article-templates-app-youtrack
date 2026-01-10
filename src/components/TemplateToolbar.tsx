@@ -1,8 +1,10 @@
 import React from 'react';
 import Button from '@jetbrains/ring-ui-built/components/button/button';
 import Input, {Size} from '@jetbrains/ring-ui-built/components/input/input';
+import Select, {Type as SelectType} from '@jetbrains/ring-ui-built/components/select/select';
 import Icon from '@jetbrains/ring-ui-built/components/icon/icon';
 import Tooltip from '@jetbrains/ring-ui-built/components/tooltip/tooltip';
+import Toggle from '@jetbrains/ring-ui-built/components/toggle/toggle';
 import trashBigIcon from '@jetbrains/icons/trash-20px';
 import backIcon from '@jetbrains/icons/arrow-left';
 import importIcon from '@jetbrains/icons/import-20px';
@@ -21,13 +23,24 @@ interface TemplateToolbarProps {
   purgeIntervalDays?: number;
   filter: string;
   onFilterChange: (value: string) => void;
+  showFavoritesOnly?: boolean;
+  onToggleShowFavorites?: () => void;
+  authors: {key: string, label: string}[];
+  authorFilter: string[];
+  onAuthorFilterChange: (authorIds: string[]) => void;
 }
 
 const DEFAULT_PURGE_DAYS = 7;
 
+interface AuthorItem {
+  key: string;
+  label?: string;
+  separator?: boolean;
+}
+
 export const TemplateToolbar: React.FC<TemplateToolbarProps> = ({
   viewMode, onAdd, onImport, onShowDeleted, onBackToList, onBulkDelete, onBulkRestore, selectedCount, purgeIntervalDays,
-  filter, onFilterChange
+  filter, onFilterChange, showFavoritesOnly, onToggleShowFavorites, authors, authorFilter, onAuthorFilterChange
 }) => {
   const filterInput = (
     <Input
@@ -41,10 +54,41 @@ export const TemplateToolbar: React.FC<TemplateToolbarProps> = ({
     />
   );
 
+  const authorFilterSelect = (
+    <Select<AuthorItem>
+      className="authorSelect"
+      data={authors}
+      selected={authors.filter(a => authorFilter.includes(a.key))}
+      onChange={(items: AuthorItem[]) => {
+        onAuthorFilterChange(items.map((it: AuthorItem) => it.key as string));
+      }}
+      filter
+      multiple={{label: 'Authors'}}
+      label="Filter by author"
+      type={SelectType.INLINE}
+      clear
+      tags={{
+          reset: {
+              separator: false,
+              label: "Reset filter"
+          },
+      }}
+    />
+  );
+
   if (viewMode === 'active') {
     return (
       <div style={{display: 'flex', gap: '8px', marginBottom: '16px', alignItems: 'center'}}>
         <Button primary onClick={onAdd}>{'Add Template'}</Button>
+        <Toggle 
+          checked={showFavoritesOnly} 
+          onChange={onToggleShowFavorites}
+        >
+          {'Show favorites'}
+        </Toggle>
+        <div style={{marginLeft: '16px', display: 'flex', alignItems: 'center', gap: '8px'}}>
+          {authorFilterSelect}
+        </div>
         {filterInput}
         <Button
           icon={importIcon} 
@@ -71,6 +115,9 @@ export const TemplateToolbar: React.FC<TemplateToolbarProps> = ({
       >
         {'Back to list'}
       </Button>
+      <div style={{marginLeft: '16px', display: 'flex', alignItems: 'center', gap: '8px'}}>
+        {authorFilterSelect}
+      </div>
       {selectedCount > 0 && (
         <Button primary onClick={onBulkRestore}>{'Restore selected'}</Button>
       )}

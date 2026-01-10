@@ -1,5 +1,12 @@
 import {HostAPI} from '../@types/globals';
 
+export interface TemplateAuthor {
+  id?: string;
+  login?: string;
+  fullName?: string;
+  email?: string;
+}
+
 export interface Template {
   id: string;
   name: string;
@@ -9,6 +16,7 @@ export interface Template {
   usageCount?: number;
   isPrivate?: boolean;
   deletedAt?: number;
+  author?: TemplateAuthor;
 }
 
 export interface YTProject {
@@ -26,6 +34,12 @@ export interface YTArticle {
 
 export interface AppSettings {
   purgeIntervalDays: number;
+}
+
+export interface UserPreferences {
+  favorites: string[];
+  showFavoritesOnly: boolean;
+  authorFilter?: string[];
 }
 
 interface ArticleDataResponse {
@@ -123,14 +137,6 @@ export default class API {
     });
   }
 
-  async createDraftInProject(summary: string, content: string, parentArticleId?: string, templateId?: string): Promise<{id: string, url: string}> {
-    return this.request<{id: string, url: string}>('backend/create-draft', {
-      method: 'POST',
-      body: {summary, content, parentArticleId, templateId},
-      scope: true
-    });
-  }
-
   async getProjects(): Promise<YTProject[]> {
     const data = await this.host.fetchYouTrack<YTProject[]>('admin/projects?fields=id,name,shortName');
     return extractResult<YTProject[]>(data);
@@ -143,5 +149,32 @@ export default class API {
 
   async getSettings(): Promise<AppSettings> {
     return this.request<AppSettings>('backend-global/settings');
+  }
+
+  async getUserPreferences(): Promise<UserPreferences> {
+    return this.request<UserPreferences>('backend-global/user-preferences');
+  }
+
+  async toggleFavorite(id: string): Promise<string[]> {
+    const res = await this.request<{favorites: string[]}>('backend-global/toggle-favorite', {
+      method: 'POST',
+      query: {id}
+    });
+    return res.favorites;
+  }
+
+  async toggleShowFavorites(): Promise<boolean> {
+    const res = await this.request<{showFavoritesOnly: boolean}>('backend-global/toggle-show-favorites', {
+      method: 'POST'
+    });
+    return res.showFavoritesOnly;
+  }
+
+  async setAuthorFilter(authorIds: string[]): Promise<string[]> {
+    const res = await this.request<{authorFilter: string[]}>('backend-global/author-filter', {
+      method: 'POST',
+      body: {authorIds}
+    });
+    return res.authorFilter;
   }
 }

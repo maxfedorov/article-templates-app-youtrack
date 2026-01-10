@@ -1,6 +1,6 @@
 import * as entities from '@jetbrains/youtrack-scripting-api/entities';
 import {PREDEFINED_TEMPLATES} from './predefined-templates';
-import {Context, Template, YTProject, YTArticle, YTUser} from './types-backend';
+import {Context, Template, YTProject, YTArticle, YTUser, TemplateAuthor} from './types-backend';
 
 const DEFAULT_PURGE_DAYS = 7;
 const HOURS_IN_DAY = 24;
@@ -38,8 +38,45 @@ class TemplateStore {
       private: this.parse(this.ctx.currentUser.extensionProperties.templates),
       deletedShared: this.parse(this.ctx.globalStorage.extensionProperties.deletedTemplates),
       deletedPrivate: this.parse(this.ctx.currentUser.extensionProperties.deletedTemplates),
-      initialImportDone: this.ctx.globalStorage.extensionProperties.initialImportDone === 'true'
+      initialImportDone: this.ctx.globalStorage.extensionProperties.initialImportDone === 'true',
+      favorites: this.favorites,
+      showFavoritesOnly: this.showFavoritesOnly,
+      authorFilter: this.authorFilter
     };
+  }
+
+  get favorites(): string[] {
+    const favs = this.ctx.currentUser.extensionProperties.favorites;
+    try {
+      return favs ? JSON.parse(favs) : [];
+    } catch {
+      return [];
+    }
+  }
+
+  set favorites(ids: string[]) {
+    this.ctx.currentUser.extensionProperties.favorites = JSON.stringify(ids);
+  }
+
+  get showFavoritesOnly(): boolean {
+    return this.ctx.currentUser.extensionProperties.showFavoritesOnly === 'true';
+  }
+
+  set showFavoritesOnly(val: boolean) {
+    this.ctx.currentUser.extensionProperties.showFavoritesOnly = val ? 'true' : 'false';
+  }
+
+  get authorFilter(): string[] {
+    const val = this.ctx.currentUser.extensionProperties.authorFilter;
+    try {
+      return val ? JSON.parse(val) : [];
+    } catch {
+      return val ? [val] : [];
+    }
+  }
+
+  set authorFilter(val: string[]) {
+    this.ctx.currentUser.extensionProperties.authorFilter = JSON.stringify(val);
   }
 
   save(data: { shared?: Template[], private?: Template[], deletedShared?: Template[], deletedPrivate?: Template[], initialImportDone?: boolean }) {
@@ -110,25 +147,31 @@ function getOldTemplate(id: string, shared: Template[], priv: Template[]) {
   return shared.find(t => t.id === id) || priv.find(t => t.id === id);
 }
 
-function prepareTemplate(template: Template, shared: Template[], priv: Template[]) {
-  const result = {...template};
-  if (!result.id) {
-    result.id = generateId();
-    result.createdAt = Date.now();
-    result.usageCount = 0;
-    return result;
-  }
-  
-  const old = getOldTemplate(result.id, shared, priv);
-  if (old) {
-    result.createdAt = result.createdAt ?? old.createdAt;
-    result.usageCount = result.usageCount ?? old.usageCount;
-  }
-  
-  result.createdAt = result.createdAt ?? Date.now();
-  result.usageCount = result.usageCount ?? 0;
-  
-  return result;
+function getAuthor(user: YTUser): TemplateAuthor {
+  const u = (user || {}) as YTUser;
+  return {
+    id: u.ringId || u.id || '',
+    login: u.login || '',
+    fullName: u.fullName || '',
+    email: u.email || ''
+  };
+}
+
+const getTId = (t: Template) => t.id || generateId();
+const getTCreatedAt = (t: Template, b: Template) => b.createdAt || t.createdAt || Date.now();
+const getTUsageCount = (t: Template, b: Template) => b.usageCount ?? t.usageCount ?? 0;
+const getTAuthor = (b: Template, u: YTUser, isNew: boolean) => isNew ? getAuthor(u) : b.author;
+
+function prepareTemplate(template: Template, old: Template | null | undefined, currentUser: YTUser) {
+  const isNew = !old;
+  const base = (old || {}) as Template;
+  return {
+    ...template,
+    id: getTId(template),
+    createdAt: getTCreatedAt(template, base),
+    usageCount: getTUsageCount(template, base),
+    author: getTAuthor(base, currentUser, isNew)
+  };
 }
 
 interface CreateDraftRequest {
@@ -253,8 +296,17 @@ export const httpHandler = {
       handle: (ctx: Context) => {
         const store = new TemplateStore(ctx);
         const {shared, private: priv} = getAndPurgeTemplates(ctx, true);
-        const template = prepareTemplate(ctx.request.json<Template>(), shared, priv);
-        
+        const reqJson = ctx.request.json<Template>();
+        const old = reqJson.id ? getOldTemplate(reqJson.id, shared, priv) : null;
+        const template = prepareTemplate(reqJson, old, ctx.currentUser);
+
+        if (!old) {
+          const favs = store.favorites;
+          if (!favs.includes(template.id)) {
+            store.favorites = [...favs, template.id];
+          }
+        }
+
         const filterFn = (list: Template[]) => list.filter(t => t.id !== template.id);
         const updatedShared = filterFn(shared);
         const updatedPrivate = filterFn(priv);
@@ -411,8 +463,19 @@ export const httpHandler = {
       path: 'permanent-template',
       handle: (ctx: Context) => {
         const id = ctx.request.getParameter('id');
+        if (!id) {
+          ctx.response.code = 400;
+          ctx.response.json({error: 'ID is required'});
+          return;
+        }
+
         const store = new TemplateStore(ctx);
         const {deletedShared, deletedPrivate} = getAndPurgeTemplates(ctx, true);
+
+        const favs = store.favorites;
+        if (favs.includes(id)) {
+          store.favorites = favs.filter(f => f !== id);
+        }
 
         store.save({
           deletedShared: deletedShared.filter(t => t.id !== id),
@@ -439,6 +502,56 @@ export const httpHandler = {
         }
 
         ctx.response.json({success: true, importedCount: toAdd.length});
+      }
+    },
+    {
+      method: 'GET',
+      path: 'user-preferences',
+      handle: (ctx: Context) => {
+        const store = new TemplateStore(ctx);
+        ctx.response.json({
+          favorites: store.favorites,
+          showFavoritesOnly: store.showFavoritesOnly,
+          authorFilter: store.authorFilter
+        });
+      }
+    },
+    {
+      method: 'POST',
+      path: 'author-filter',
+      handle: (ctx: Context) => {
+        const {authorIds} = ctx.request.json<{authorIds: string[]}>();
+        const store = new TemplateStore(ctx);
+        store.authorFilter = authorIds || [];
+        ctx.response.json({authorFilter: store.authorFilter});
+      }
+    },
+    {
+      method: 'POST',
+      path: 'toggle-favorite',
+      handle: (ctx: Context) => {
+        const id = ctx.request.getParameter('id');
+        if (!id) {
+          ctx.response.code = 400;
+          return;
+        }
+        const store = new TemplateStore(ctx);
+        const favs = store.favorites;
+        if (favs.includes(id)) {
+          store.favorites = favs.filter(f => f !== id);
+        } else {
+          store.favorites = [...favs, id];
+        }
+        ctx.response.json({favorites: store.favorites});
+      }
+    },
+    {
+      method: 'POST',
+      path: 'toggle-show-favorites',
+      handle: (ctx: Context) => {
+        const store = new TemplateStore(ctx);
+        store.showFavoritesOnly = !store.showFavoritesOnly;
+        ctx.response.json({showFavoritesOnly: store.showFavoritesOnly});
       }
     },
     {

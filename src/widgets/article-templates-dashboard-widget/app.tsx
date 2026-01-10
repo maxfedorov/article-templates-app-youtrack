@@ -12,6 +12,8 @@ import trashIcon from '@jetbrains/icons/trash';
 import pencilIcon from '@jetbrains/icons/pencil';
 import lockIcon from '@jetbrains/icons/lock';
 import historyIcon from '@jetbrains/icons/history';
+import starIcon from '@jetbrains/icons/star-empty';
+import starFilledIcon from '@jetbrains/icons/star-filled';
 import API, {Template, YTProject, YTArticle} from '../../api';
 import type {AlertType} from '@jetbrains/ring-ui-built/components/alert/alert';
 import {TemplateEditor} from '../../components/TemplateEditor';
@@ -26,6 +28,28 @@ interface SelectedItem {
 
 const host = await YTApp.register();
 const api = new API(host);
+
+const getVal = (t: Template, key: string) => {
+  if (key === 'name') {
+    return t.name.toLowerCase();
+  }
+  return (t.author?.login || 'n/a').toLowerCase();
+};
+
+const sortTemplates = (data: Template[], sortKey: string | undefined, sortOrder: boolean) => {
+  if (!sortKey) {
+    return data;
+  }
+  return [...data].sort((a, b) => {
+    const vA = getVal(a, sortKey);
+    const vB = getVal(b, sortKey);
+    if (vA === vB) {
+      return 0;
+    }
+    const diff = vA < vB ? -1 : 1;
+    return sortOrder ? diff : -diff;
+  });
+};
 
 const AppComponent: React.FC = () => {
   const manager = useTemplateManager(host, api);
@@ -86,27 +110,47 @@ const AppComponent: React.FC = () => {
     });
   }, [loadData]);
 
-  const {templates, deletedTemplates, viewMode, filter, sortKey, sortOrder} = manager;
+  const {templates, deletedTemplates, viewMode, filter, sortKey, sortOrder, favorites, showFavoritesOnly, authorFilter} = manager;
+
+  const authors = useMemo(() => {
+    const map = new Map<string, string>();
+    let hasNoAuthor = false;
+    
+    templates.forEach(t => {
+      const authorId = t.author?.id || t.author?.login;
+      if (authorId && t.author?.login) {
+        map.set(authorId, t.author.login);
+      } else {
+        hasNoAuthor = true;
+      }
+    });
+
+    const result = Array.from(map.entries()).map(([key, label]) => ({key, label}));
+    if (hasNoAuthor) {
+      result.push({key: 'no-author', label: 'n/a'});
+    }
+    return result.sort((a, b) => a.label.localeCompare(b.label));
+  }, [templates]);
+
   const visibleData = useMemo(() => {
-    let data = viewMode === 'active' ? templates : deletedTemplates;
+    let data = (viewMode === 'active' ? templates : deletedTemplates) as Template[];
+    if (viewMode === 'active' && showFavoritesOnly) {
+      data = data.filter(t => favorites.includes(t.id));
+    }
+    if (authorFilter.length > 0) {
+      data = data.filter(t => {
+        const authorId = t.author?.id || t.author?.login;
+        if (!authorId) {
+          return authorFilter.includes('no-author');
+        }
+        return authorFilter.includes(authorId);
+      });
+    }
     if (filter.trim()) {
       data = data.filter(t => t.name.toLowerCase().includes(filter.toLowerCase()));
     }
-    if (sortKey === 'name') {
-      data = [...data].sort((a, b) => {
-        const valA = a.name.toLowerCase();
-        const valB = b.name.toLowerCase();
-        if (valA < valB) {
-          return sortOrder ? -1 : 1;
-        }
-        if (valA > valB) {
-          return sortOrder ? 1 : -1;
-        }
-        return 0;
-      });
-    }
-    return data;
-  }, [templates, deletedTemplates, viewMode, filter, sortKey, sortOrder]);
+    return sortTemplates(data, sortKey, sortOrder);
+  }, [templates, deletedTemplates, viewMode, filter, sortKey, sortOrder, favorites, showFavoritesOnly, authorFilter]);
 
   const {setSelection} = manager;
   useEffect(() => {
@@ -118,6 +162,20 @@ const AppComponent: React.FC = () => {
   })), [projects]);
 
   const columns = manager.viewMode === 'active' ? [
+    {
+      id: 'favorite', width: '32px',
+      getValue: (t: Template) => {
+        const isFav = favorites.includes(t.id);
+        return (
+          <Button 
+            icon={isFav ? starFilledIcon : starIcon}
+            onClick={() => manager.onToggleFavorite(t.id)}
+            title={isFav ? "Remove from favorites" : "Add to favorites"}
+            className={isFav ? 'favorite-active' : 'favorite-inactive'}
+          />
+        );
+      }
+    },
     {
       id: 'name', title: 'Name', sortable: true,
       getValue: (t: Template) => (
@@ -131,6 +189,12 @@ const AppComponent: React.FC = () => {
             />
           )}
         </div>
+      )
+    },
+    {
+      id: 'author', title: 'Author', sortable: true,
+      getValue: (t: Template) => (
+        <Text style={{color: 'var(--ring-secondary-color)'}}>{t.author?.login || 'n/a'}</Text>
       )
     },
     {
@@ -218,6 +282,12 @@ const AppComponent: React.FC = () => {
       )
     },
     {
+      id: 'author', title: 'Author', sortable: true,
+      getValue: (t: Template) => (
+        <Text style={{color: 'var(--ring-secondary-color)'}}>{t.author?.login || 'n/a'}</Text>
+      )
+    },
+    {
       id: 'restore', width: '40px',
       getValue: (t: Template) => (
         <Button 
@@ -269,6 +339,11 @@ const AppComponent: React.FC = () => {
         purgeIntervalDays={manager.settings?.purgeIntervalDays}
         filter={manager.filter} 
         onFilterChange={manager.setFilter}
+        showFavoritesOnly={manager.showFavoritesOnly}
+        onToggleShowFavorites={manager.onToggleShowFavorites}
+        authors={authors}
+        authorFilter={manager.authorFilter}
+        onAuthorFilterChange={manager.onSetAuthorFilter}
       />
       <Table
         data={visibleData} 

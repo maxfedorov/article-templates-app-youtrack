@@ -22,6 +22,15 @@
         },
         "deletedTemplates": {
           "type": "string"
+        },
+        "favorites": {
+          "type": "string"
+        },
+        "showFavoritesOnly": {
+          "type": "string"
+        },
+        "authorFilter": {
+          "type": "string"
         }
       }
     }

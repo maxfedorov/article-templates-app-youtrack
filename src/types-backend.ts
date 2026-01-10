@@ -1,3 +1,10 @@
+export interface TemplateAuthor {
+  id?: string;
+  login?: string;
+  fullName?: string;
+  email?: string;
+}
+
 export interface Template {
   id: string;
   name: string;
@@ -7,6 +14,7 @@ export interface Template {
   usageCount?: number;
   isPrivate?: boolean;
   deletedAt?: number;
+  author?: TemplateAuthor;
 }
 
 export interface YTProject {
@@ -26,10 +34,10 @@ export interface YTArticle {
 
 export interface YTUser {
   id: string;
+  ringId?: string;
   login: string;
   fullName: string;
   email?: string;
-  ringId: string;
   extensionProperties: Record<string, string>;
 }
 

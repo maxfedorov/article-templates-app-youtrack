@@ -17,8 +17,23 @@
   vertical-align: middle;
 }
 
+.favorite-active {
+  color: var(--ring-icon-highlight-color) !important;
+}
+
+.favorite-inactive {
+  color: var(--ring-secondary-color) !important;
+}
+
 .tableSelect button,
-.tableSelect span {
+.tableSelect span,
+.authorSelect button,
+.authorSelect span {
     max-width: 100%;
     overflow: hidden !important;
+    white-space: nowrap;
+}
+
+.authorSelect {
+    max-width: 250px;
 }

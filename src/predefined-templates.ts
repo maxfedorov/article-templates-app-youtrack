@@ -5,6 +5,7 @@ export const PREDEFINED_TEMPLATES: Template[] = [
     id: 'sys-retrospective',
     name: 'Sprint Retrospective',
     summary: 'Sprint Retrospective — [Sprint Name/Number]',
+    author: { login: 'Predefined', id: 'predefined' },
     content: `# Sprint Retrospective: [Sprint Name/Number]
 
 **Date:** [DD-MM-YYYY]  
@@ -48,6 +49,7 @@ export const PREDEFINED_TEMPLATES: Template[] = [
     id: 'sys-meeting-notes',
     name: 'Meeting Notes',
     summary: 'Meeting Notes — [Meeting Title] — [DD-MM-YYYY]',
+    author: { login: 'Predefined', id: 'predefined' },
     content: `# Meeting Notes: [Meeting Title]
 
 **Date:** [DD-MM-YYYY]  
@@ -88,6 +90,7 @@ export const PREDEFINED_TEMPLATES: Template[] = [
     id: 'sys-prd',
     name: 'Product Requirements Document (PRD)',
     summary: 'PRD — [Project/Feature Name]',
+    author: { login: 'Predefined', id: 'predefined' },
     content: `# PRD: [Project/Feature Name]
 
 | Status | Owner | Stakeholders | Target Release |
@@ -161,6 +164,7 @@ export const PREDEFINED_TEMPLATES: Template[] = [
     id: 'sys-one-on-one',
     name: '1-on-1 Meeting',
     summary: '1-on-1 — [Team Member] & [Lead] — [DD-MM-YYYY]',
+    author: { login: 'Predefined', id: 'predefined' },
     content: `# 1-on-1: [Team Member] & [Lead]
 
 **Date:** [DD-MM-YYYY]  
@@ -213,6 +217,7 @@ export const PREDEFINED_TEMPLATES: Template[] = [
     id: 'sys-incident-report',
     name: 'Incident Report (Post-Mortem)',
     summary: 'Incident Report — [Incident Title] — [DD-MM-YYYY]',
+    author: { login: 'Predefined', id: 'predefined' },
     content: `# Incident Report: [Incident Title]
 
 **Incident ID:** [Optional]  

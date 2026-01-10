@@ -41,3 +41,35 @@
 .searchInput {
     width: 300px;
 }
+
+.templateTable table {
+    table-layout: fixed;
+    width: 100%;
+}
+
+.templateTable td {
+    vertical-align: middle !important;
+}
+
+.nameWrapper {
+    display: flex !important;
+    align-items: center !important;
+    width: 100% !important;
+    max-width: 300px !important;
+    min-width: 0 !important;
+    overflow: hidden !important;
+}
+
+.nameText {
+    display: block !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+    flex-shrink: 1 !important;
+    min-width: 0 !important;
+}
+
+.nameIcon {
+    flex-shrink: 0;
+    margin-left: var(--ring-unit);
+}

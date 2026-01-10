@@ -177,28 +177,29 @@ const AppComponent: React.FC = () => {
       }
     },
     {
-      id: 'name', title: 'Name', sortable: true,
+      id: 'name', title: 'Name', sortable: true, width: '300px',
       getValue: (t: Template) => (
-        <div>
-          <Text>{t.name}</Text>
+        <div className="nameWrapper" style={{maxWidth: '300px', overflow: 'hidden'}}>
+          <Text className="nameText" title={t.name}>{t.name}</Text>
           {t.isPrivate && (
             <Icon 
               glyph={lockIcon} 
               title="Private" 
-              style={{paddingLeft: 'var(--ring-unit)', color: 'var(--ring-secondary-color)'}}
+              className="nameIcon"
+              style={{color: 'var(--ring-secondary-color)'}}
             />
           )}
         </div>
       )
     },
     {
-      id: 'author', title: 'Author', sortable: true,
+      id: 'author', title: 'Author', sortable: true, width: '150px',
       getValue: (t: Template) => (
         <Text style={{color: 'var(--ring-secondary-color)'}}>{t.author?.login || 'n/a'}</Text>
       )
     },
     {
-      id: 'project', title: 'Project',
+      id: 'project', title: 'Project', width: '200px',
       getValue: (t: Template) => (
         <Select<SelectedItem>
           type={SelectType.INLINE} 
@@ -211,7 +212,7 @@ const AppComponent: React.FC = () => {
       )
     },
     {
-      id: 'parent', title: 'Parent Article',
+      id: 'parent', title: 'Parent Article', width: '200px',
       getValue: (t: Template) => {
         const project = selectedProjects[t.id];
         const articles = project?.shortName ? (articlesByProject[project.shortName] || []) : [];
@@ -267,22 +268,36 @@ const AppComponent: React.FC = () => {
     }
   ] : [
     {
-      id: 'name', title: 'Name', sortable: true,
+      id: 'favorite', width: '32px',
+      getValue: (t: Template) => {
+        const isFav = favorites.includes(t.id);
+        return (
+          <Button 
+            icon={isFav ? starFilledIcon : starIcon}
+            className={isFav ? 'favorite-active' : 'favorite-inactive'}
+            style={{cursor: 'default', pointerEvents: 'none'}}
+          />
+        );
+      }
+    },
+    {
+      id: 'name', title: 'Name', sortable: true, width: '300px',
       getValue: (t: Template) => (
-        <div>
-          <Text>{t.name}</Text>
+        <div className="nameWrapper" style={{maxWidth: '300px', overflow: 'hidden'}}>
+          <Text className="nameText" title={t.name}>{t.name}</Text>
           {t.isPrivate && (
             <Icon 
               glyph={lockIcon} 
               title="Private" 
-              style={{paddingLeft: 'var(--ring-unit)', color: 'var(--ring-secondary-color)'}}
+              className="nameIcon"
+              style={{color: 'var(--ring-secondary-color)'}}
             />
           )}
         </div>
       )
     },
     {
-      id: 'author', title: 'Author', sortable: true,
+      id: 'author', title: 'Author', sortable: true, width: '150px',
       getValue: (t: Template) => (
         <Text style={{color: 'var(--ring-secondary-color)'}}>{t.author?.login || 'n/a'}</Text>
       )
@@ -346,6 +361,7 @@ const AppComponent: React.FC = () => {
         onAuthorFilterChange={manager.onSetAuthorFilter}
       />
       <Table
+        className="templateTable"
         data={visibleData} 
         columns={columns} 
         selection={manager.selection}

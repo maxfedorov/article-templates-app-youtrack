@@ -37,3 +37,7 @@
 .authorSelect {
     max-width: 250px;
 }
+
+.searchInput {
+    width: 300px;
+}

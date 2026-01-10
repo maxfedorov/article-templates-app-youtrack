@@ -108,10 +108,10 @@ const ActiveToolbar: React.FC<TemplateToolbarProps> = ({
         onClick={onShowDeleted}
         title="Show deleted templates"
       />
-      <Button primary onClick={onAdd}>{'Add Template'}</Button>
       {selectedCount > 0 && (
         <Button danger onClick={onBulkDelete}>{'Delete selected'}</Button>
       )}
+      <Button primary onClick={onAdd}>{'Add Template'}</Button>
     </div>
   </div>
 );

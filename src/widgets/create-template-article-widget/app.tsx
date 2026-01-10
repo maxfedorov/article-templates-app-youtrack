@@ -24,6 +24,7 @@ const AppComponent: React.FunctionComponent = () => {
       try {
         const article = await api.getArticleData();
         
+        setName(article.summary || '');
         setSummary(article.summary || '');
         setContent(article.content || '');
       } catch (e) {

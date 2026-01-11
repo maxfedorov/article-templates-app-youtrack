@@ -152,10 +152,19 @@ const AppComponent: React.FC = () => {
     return sortTemplates(data, sortKey, sortOrder);
   }, [templates, deletedTemplates, viewMode, filter, sortKey, sortOrder, favorites, showFavoritesOnly, authorFilter]);
 
-  const {setSelection} = manager;
+  const {setSelection, onSetAuthorFilter} = manager;
   useEffect(() => {
     setSelection(new Selection({data: visibleData}));
   }, [visibleData, setSelection]);
+
+  useEffect(() => {
+    if (authorFilter.length > 0 && visibleData.length === 0) {
+      const baseData = viewMode === 'active' ? templates : deletedTemplates;
+      if (baseData.length > 0) {
+        onSetAuthorFilter([]);
+      }
+    }
+  }, [visibleData.length, authorFilter, templates, deletedTemplates, viewMode, onSetAuthorFilter]);
 
   const projectOptions: SelectedItem[] = useMemo(() => projects.map(p => ({
     key: p.id, label: p.name, shortName: p.shortName

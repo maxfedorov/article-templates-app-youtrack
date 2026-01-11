@@ -3,6 +3,7 @@
   "title": "Article templates",
   "description": "Allows you to create and manage article templates, create a template from an existing article, and create new articles from templates to streamline your Knowledge Base workflow.",
   "version": "1.1.0",
+  "changeNotes": "<h3>Version 1.1.0</h3>\n<ul>\n    <li><b>Favorites & Quick Filter:</b> Now you can mark templates as favorites! Just click the star icon next to a template name. Use the \"Show favorites\" toggle to quickly filter your list.</li>\n    <li><b>Author Tracking & Filtering:</b> Templates now display who created them. A new \"Author\" column in the dashboard widget shows the creator's login, and you can use the multi-select filter to view templates from specific authors.</li>\n</ul>",
   "$schema": "https://json.schemastore.org/youtrack-app.json",
   "vendor": {
     "name": "Maksim Fedorov",

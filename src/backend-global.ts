@@ -576,7 +576,7 @@ export const httpHandler = {
           deletedPrivate: deletedPrivate.filter(t => t.id !== id)
         });
 
-        ctx.response.json(restored);
+        ctx.response.json(processTemplateForResponse(restored, ctx.currentUser) || restored);
       }
     },
     {

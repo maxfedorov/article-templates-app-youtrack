@@ -1,5 +1,7 @@
 import React, {memo, useCallback, useEffect, useState, useMemo} from 'react';
 import Button from '@jetbrains/ring-ui-built/components/button/button';
+import DropdownMenu from '@jetbrains/ring-ui-built/components/dropdown-menu/dropdown-menu';
+import type {ListDataItem} from '@jetbrains/ring-ui-built/components/list/list';
 import Text from '@jetbrains/ring-ui-built/components/text/text';
 import LoaderInline from '@jetbrains/ring-ui-built/components/loader-inline/loader-inline';
 import Table from '@jetbrains/ring-ui-built/components/table/table';
@@ -15,6 +17,7 @@ import copyIcon from '@jetbrains/icons/copy';
 import lockIcon from '@jetbrains/icons/lock';
 import Tooltip from '@jetbrains/ring-ui-built/components/tooltip/tooltip';
 import historyIcon from '@jetbrains/icons/history';
+import moreOptionsIcon from '@jetbrains/icons/more-options';
 import starIcon from '@jetbrains/icons/star-empty';
 import starFilledIcon from '@jetbrains/icons/star-filled';
 import API, {Template, YTProject, YTArticle} from '../../api';
@@ -326,34 +329,29 @@ const AppComponent: React.FC = () => {
       }
     },
     {
-      id: 'clone', width: '40px',
+      id: 'actions', width: '40px',
       getValue: (t: Template) => (
-        <Button 
-          icon={copyIcon} 
-          onClick={() => manager.onClone(t)}
-          title="Clone template"
-        />
-      )
-    },
-    {
-      id: 'edit', width: '40px',
-      getValue: (t: Template) => (
-        <Button 
-          icon={t.canEdit ? pencilIcon : eyeIcon} 
-          onClick={() => manager.setEditingTemplate(t)} 
-          title={t.canEdit ? "Edit Template" : "View Template"}
-        />
-      )
-    },
-    {
-      id: 'delete', width: '40px',
-      getValue: (t: Template) => (
-        <Button 
-          danger 
-          icon={trashIcon} 
-          onClick={() => manager.onDelete(t.id)} 
-          title="Delete Template"
-          disabled={!t.canEdit}
+        <DropdownMenu
+          anchor={<Button icon={moreOptionsIcon}/>}
+          data={[
+            {
+              label: 'Clone',
+              glyph: copyIcon,
+              onClick: () => manager.onClone(t)
+            },
+            {
+              label: t.canEdit ? 'Edit' : 'View',
+              glyph: t.canEdit ? pencilIcon : eyeIcon,
+              onClick: () => manager.setEditingTemplate(t)
+            },
+            t.canEdit ? {
+              label: 'Delete',
+              glyph: trashIcon,
+              danger: true,
+              className: 'removeOption',
+              onClick: () => manager.onDelete(t.id)
+            } : null
+          ].filter(item => !!item) as readonly ListDataItem[]}
         />
       )
     }
@@ -406,23 +404,24 @@ const AppComponent: React.FC = () => {
       )
     },
     {
-      id: 'restore', width: '40px',
+      id: 'actions', width: '40px',
       getValue: (t: Template) => (
-        <Button 
-          icon={historyIcon} 
-          onClick={() => manager.onRestore(t.id)} 
-          title="Restore Template"
-        />
-      )
-    },
-    {
-      id: 'permanent-delete', width: '40px',
-      getValue: (t: Template) => (
-        <Button 
-          danger 
-          icon={trashIcon} 
-          onClick={() => manager.onPermanentDelete(t.id)} 
-          title="Permanently Delete"
+        <DropdownMenu
+          anchor={<Button icon={moreOptionsIcon}/>}
+          data={[
+            {
+              label: 'Restore',
+              glyph: historyIcon,
+              onClick: () => manager.onRestore(t.id)
+            },
+            {
+              label: 'Delete Forever',
+              glyph: trashIcon,
+              danger: true,
+              className: 'removeOption',
+              onClick: () => manager.onPermanentDelete(t.id)
+            }
+          ]}
         />
       )
     }

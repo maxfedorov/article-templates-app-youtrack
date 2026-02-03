@@ -73,3 +73,11 @@
     flex-shrink: 0;
     margin-left: var(--ring-unit);
 }
+
+.removeOption {
+  color: var(--ring-error-color) !important;
+
+  & svg {
+    color: var(--ring-error-color) !important;
+  }
+}

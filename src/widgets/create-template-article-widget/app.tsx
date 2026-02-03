@@ -3,9 +3,10 @@ import Button from '@jetbrains/ring-ui-built/components/button/button';
 import ButtonSet from '@jetbrains/ring-ui-built/components/button-set/button-set';
 import Input, {Size} from '@jetbrains/ring-ui-built/components/input/input';
 import Toggle from '@jetbrains/ring-ui-built/components/toggle/toggle';
+import Select from '@jetbrains/ring-ui-built/components/select/select';
 import LoaderInline from '@jetbrains/ring-ui-built/components/loader-inline/loader-inline';
 import Text from '@jetbrains/ring-ui-built/components/text/text';
-import API, {Template} from '../../api';
+import API, {Template, YTProject} from '../../api';
 import type {AlertType} from "@jetbrains/ring-ui-built/components/alert/alert";
 
 const host = await YTApp.register();
@@ -16,27 +17,35 @@ const AppComponent: React.FunctionComponent = () => {
   const [summary, setSummary] = useState('');
   const [content, setContent] = useState('');
   const [isPrivate, setIsPrivate] = useState(true);
+  const [lockedForOthers, setLockedForOthers] = useState(false);
+  const [projectId, setProjectId] = useState<string | undefined>(undefined);
+  const [projects, setProjects] = useState<YTProject[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    async function loadArticleData() {
+    async function loadInitialData() {
       try {
-        const article = await api.getArticleData();
+        const [article, projectsData] = await Promise.all([
+          api.getArticleData(),
+          api.getProjects()
+        ]);
         
         setName(article.summary || '');
         setSummary(article.summary || '');
         setContent(article.content || '');
+        setProjectId(article.projectId);
+        setProjects(projectsData || []);
       } catch (e) {
         // eslint-disable-next-line no-console
-        console.error('Failed to load article data', e);
-        host.alert('Failed to load article data', 'error' as AlertType.ERROR);
+        console.error('Failed to load initial data', e);
+        host.alert('Failed to load initial data', 'error' as AlertType.ERROR);
       } finally {
         setLoading(false);
       }
     }
 
-    loadArticleData();
+    loadInitialData();
   }, []);
 
   const onSave = useCallback(async () => {
@@ -51,6 +60,8 @@ const AppComponent: React.FunctionComponent = () => {
         summary,
         content,
         isPrivate,
+        lockedForOthers,
+        projectId,
         createdAt: Date.now(),
         usageCount: 0
       };
@@ -65,11 +76,17 @@ const AppComponent: React.FunctionComponent = () => {
     } finally {
       setSaving(false);
     }
-  }, [name, summary, content, isPrivate]);
+  }, [name, summary, content, isPrivate, lockedForOthers, projectId]);
 
   if (loading) {
     return <LoaderInline/>;
   }
+
+  const projectOptions = [
+    {label: 'All projects', key: 'all'},
+    ...projects.map(p => ({label: p.name, key: p.shortName || p.id}))
+  ];
+  const selectedProject = projectOptions.find(p => p.key === (projectId || 'all')) || projectOptions[0];
 
   return (
     <div className="widget" style={{padding: '16px', display: 'flex', flexDirection: 'column', gap: '16px'}}>
@@ -97,11 +114,32 @@ const AppComponent: React.FunctionComponent = () => {
         className="contentTextarea"
       />
 
+      <div>
+        <div style={{fontSize: '12px', color: 'var(--ring-secondary-color)', marginBottom: '4px'}}>{'Project'}</div>
+        <Select
+          data={projectOptions}
+          selected={selectedProject}
+          onSelect={item => item && setProjectId(item.key === 'all' ? undefined : item.key)}
+          size={Size.FULL}
+          filter
+          maxHeight={400}
+        />
+      </div>
+
       <Toggle
         checked={isPrivate}
         onChange={e => setIsPrivate(e.target.checked)}
       >
-        {'Private Template'}
+        {'Private template'}
+      </Toggle>
+
+      <Toggle
+        checked={lockedForOthers}
+        onChange={e => setLockedForOthers(e.target.checked)}
+      >
+        {lockedForOthers 
+          ? 'Only author and admins can edit' 
+          : 'Anyone can edit'}
       </Toggle>
 
       <Text info style={{fontSize: '12px', color: 'var(--ring-secondary-color)'}}>

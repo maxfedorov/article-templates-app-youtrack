@@ -29,6 +29,9 @@ interface TemplateToolbarProps {
   authors: {key: string, label: string}[];
   authorFilter: string[];
   onAuthorFilterChange: (authorIds: string[]) => void;
+  projects: {key: string, label: string}[];
+  projectFilter: string[];
+  onProjectFilterChange: (projectIds: string[]) => void;
 }
 
 const DEFAULT_PURGE_DAYS = 7;
@@ -68,6 +71,34 @@ const AuthorFilter: React.FC<{
     label="Author"
     type={SelectType.INLINE}
     clear
+    maxHeight={400}
+    tags={{
+      reset: {
+        separator: false,
+        label: "Reset filter"
+      },
+    }}
+  />
+);
+
+const ProjectFilter: React.FC<{
+  projects: {key: string, label: string}[],
+  projectFilter: string[],
+  onProjectFilterChange: (ids: string[]) => void
+}> = ({projects, projectFilter, onProjectFilterChange}) => (
+  <Select<AuthorItem>
+    className="authorSelect"
+    data={projects}
+    selected={projects.filter(p => projectFilter.includes(p.key))}
+    onChange={(items: AuthorItem[]) => {
+      onProjectFilterChange(items.map((it: AuthorItem) => it.key as string));
+    }}
+    filter
+    multiple={{label: 'Projects'}}
+    label="Project"
+    type={SelectType.INLINE}
+    clear
+    maxHeight={400}
     tags={{
       reset: {
         separator: false,
@@ -79,7 +110,9 @@ const AuthorFilter: React.FC<{
 
 const ActiveToolbar: React.FC<TemplateToolbarProps> = ({
   onAdd, onImport, onShowDeleted, onBulkDelete, selectedCount,
-  filter, onFilterChange, showFavoritesOnly, onToggleShowFavorites, authors, authorFilter, onAuthorFilterChange
+  filter, onFilterChange, showFavoritesOnly, onToggleShowFavorites, 
+  authors, authorFilter, onAuthorFilterChange,
+  projects, projectFilter, onProjectFilterChange
 }) => (
   <div style={{display: 'flex', gap: '8px', marginBottom: '16px', alignItems: 'center', paddingRight: '16px'}}>
     <Button
@@ -94,6 +127,11 @@ const ActiveToolbar: React.FC<TemplateToolbarProps> = ({
         authors={authors} 
         authorFilter={authorFilter} 
         onAuthorFilterChange={onAuthorFilterChange} 
+      />
+      <ProjectFilter
+        projects={projects}
+        projectFilter={projectFilter}
+        onProjectFilterChange={onProjectFilterChange}
       />
     </div>
 
@@ -118,7 +156,8 @@ const ActiveToolbar: React.FC<TemplateToolbarProps> = ({
 
 const DeletedToolbar: React.FC<TemplateToolbarProps> = ({
   onBackToList, onBulkRestore, selectedCount, purgeIntervalDays,
-  filter, onFilterChange, authors, authorFilter, onAuthorFilterChange
+  filter, onFilterChange, authors, authorFilter, onAuthorFilterChange,
+  projects, projectFilter, onProjectFilterChange
 }) => (
   <div style={{display: 'flex', gap: '8px', marginBottom: '16px', alignItems: 'center', paddingRight: '16px'}}>
     <Button icon={backIcon} onClick={onBackToList}>{'Back'}</Button>
@@ -134,6 +173,11 @@ const DeletedToolbar: React.FC<TemplateToolbarProps> = ({
         authors={authors} 
         authorFilter={authorFilter} 
         onAuthorFilterChange={onAuthorFilterChange} 
+      />
+      <ProjectFilter
+        projects={projects}
+        projectFilter={projectFilter}
+        onProjectFilterChange={onProjectFilterChange}
       />
     </div>
     <div style={{marginLeft: 'auto', display: 'flex', gap: '8px', alignItems: 'center'}}>

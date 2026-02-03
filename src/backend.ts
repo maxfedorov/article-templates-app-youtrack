@@ -11,7 +11,8 @@ export const httpHandler = {
         if (entity) {
           ctx.response.json({
             summary: entity.summary,
-            content: entity.content
+            content: entity.content,
+            projectId: ctx.project?.shortName
           });
         } else {
           ctx.response.code = 404;

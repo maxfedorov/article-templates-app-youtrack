@@ -41,7 +41,8 @@ class TemplateStore {
       initialImportDone: this.ctx.globalStorage.extensionProperties.initialImportDone === 'true',
       favorites: this.favorites,
       showFavoritesOnly: this.showFavoritesOnly,
-      authorFilter: this.authorFilter
+      authorFilter: this.authorFilter,
+      projectFilter: this.projectFilter
     };
   }
 
@@ -77,6 +78,19 @@ class TemplateStore {
 
   set authorFilter(val: string[]) {
     this.ctx.currentUser.extensionProperties.authorFilter = JSON.stringify(val);
+  }
+
+  get projectFilter(): string[] {
+    const val = this.ctx.currentUser.extensionProperties.projectFilter;
+    try {
+      return val ? JSON.parse(val) : [];
+    } catch {
+      return val ? [val] : [];
+    }
+  }
+
+  set projectFilter(val: string[]) {
+    this.ctx.currentUser.extensionProperties.projectFilter = JSON.stringify(val);
   }
 
   save(data: { shared?: Template[], private?: Template[], deletedShared?: Template[], deletedPrivate?: Template[], initialImportDone?: boolean }) {
@@ -157,6 +171,53 @@ function getAuthor(user: YTUser): TemplateAuthor {
   };
 }
 
+function canEditTemplate(template: Template, currentUser: YTUser): boolean {
+  if (!template.lockedForOthers) {
+    return true;
+  }
+  const authorId = template.author?.id;
+  const currentUserId = currentUser.ringId;
+  if (authorId && authorId === currentUserId) {
+    return true;
+  }
+  try {
+    return currentUser.hasPermission('ADMIN_UPDATE_APP');
+  } catch {
+    return false;
+  }
+}
+
+function checkProjectPermission(ctx: Context, projectId: string | undefined): boolean {
+  if (!projectId) {
+    return true;
+  }
+  const project = ytEntities.Project.findByKey(projectId);
+  if (!project) {
+    return false;
+  }
+  return ctx.currentUser.hasPermission('CREATE_ARTICLE', project);
+}
+
+function processTemplateForResponse(template: Template, currentUser: YTUser): Template | null {
+  const result = {...template} as Template & {projectName?: string, canEdit?: boolean};
+  
+  // Clear any potentially stored computed fields to ensure they are re-computed and not leaked
+  delete result.projectName;
+  delete result.canEdit;
+
+  if (template.projectId) {
+    const project = ytEntities.Project.findByKey(template.projectId);
+    if (project) {
+      result.projectName = project.name;
+      result.projectId = project.shortName;
+    }
+  }
+  
+  result.canEdit = canEditTemplate(template, currentUser);
+  
+  return result;
+}
+
 const getTId = (t: Template) => t.id || generateId();
 const getTCreatedAt = (t: Template, b: Template) => b.createdAt || t.createdAt || Date.now();
 const getTUsageCount = (t: Template, b: Template) => b.usageCount ?? t.usageCount ?? 0;
@@ -165,12 +226,18 @@ const getTAuthor = (b: Template, u: YTUser, isNew: boolean) => isNew ? getAuthor
 function prepareTemplate(template: Template, old: Template | null | undefined, currentUser: YTUser) {
   const isNew = !old;
   const base = (old || {}) as Template;
+  // Explicitly pick only the fields we want to store to avoid saving computed fields like projectName or canEdit
   return {
-    ...template,
     id: getTId(template),
+    name: template.name,
+    summary: template.summary,
+    content: template.content,
     createdAt: getTCreatedAt(template, base),
     usageCount: getTUsageCount(template, base),
-    author: getTAuthor(base, currentUser, isNew)
+    isPrivate: template.isPrivate,
+    author: getTAuthor(base, currentUser, isNew),
+    lockedForOthers: template.lockedForOthers,
+    projectId: template.projectId
   };
 }
 
@@ -227,6 +294,12 @@ export const httpHandler = {
           return;
         }
 
+        if (!ctx.currentUser.hasPermission('CREATE_ARTICLE', project)) {
+          ctx.response.code = 403;
+          ctx.response.json({error: 'You do not have permission to create articles in project: ' + projectKey});
+          return;
+        }
+
         const draft = ytEntities.Article.createDraft(project, ctx.currentUser);
         draft.summary = summary || '';
         draft.content = content || '';
@@ -251,6 +324,7 @@ export const httpHandler = {
       method: 'GET',
       path: 'templates',
       handle: (ctx: Context) => {
+        const projectsParam = ctx.request.getParameter('projects');
         const data = getAndPurgeTemplates(ctx, false);
         const deletedIds = new Set([...data.deletedShared, ...data.deletedPrivate].map(t => t.id));
         const all = new Map<string, Template>();
@@ -275,29 +349,83 @@ export const httpHandler = {
           }
         });
 
-        ctx.response.json(Array.from(all.values()));
+        const res = Array.from(all.values())
+          .filter(t => {
+            if (!checkProjectPermission(ctx, t.projectId)) {
+              return false;
+            }
+            if (projectsParam === 'all') {
+              return true;
+            }
+            if (!t.projectId) {
+              return true;
+            }
+            const allowed = projectsParam ? projectsParam.split(',') : [];
+            return allowed.includes(t.projectId);
+          })
+          .map(t => processTemplateForResponse(t, ctx.currentUser))
+          .filter(t => t !== null);
+
+        ctx.response.json(res);
       }
     },
     {
       method: 'GET',
       path: 'deleted-templates',
       handle: (ctx: Context) => {
+        const projectsParam = ctx.request.getParameter('projects');
         const {deletedShared, deletedPrivate} = getAndPurgeTemplates(ctx, false);
         const res = [
           ...deletedShared.map(t => ({...t, isPrivate: false})),
           ...deletedPrivate.map(t => ({...t, isPrivate: true}))
-        ];
+        ]
+          .filter(t => {
+            if (!checkProjectPermission(ctx, t.projectId)) {
+              return false;
+            }
+            if (projectsParam === 'all') {
+              return true;
+            }
+            if (!t.projectId) {
+              return true;
+            }
+            const allowed = projectsParam ? projectsParam.split(',') : [];
+            return allowed.includes(t.projectId);
+          })
+          .map(t => processTemplateForResponse(t, ctx.currentUser))
+          .filter(t => t !== null);
+          
         ctx.response.json(res);
       }
     },
     {
       method: 'POST',
       path: 'templates',
+      // eslint-disable-next-line complexity
       handle: (ctx: Context) => {
         const store = new TemplateStore(ctx);
         const {shared, private: priv} = getAndPurgeTemplates(ctx, true);
         const reqJson = ctx.request.json<Template>();
         const old = reqJson.id ? getOldTemplate(reqJson.id, shared, priv) : null;
+
+        if (old && old.projectId && !checkProjectPermission(ctx, old.projectId)) {
+          ctx.response.code = 403;
+          ctx.response.json({error: 'You do not have permission to access the project of this template'});
+          return;
+        }
+
+        if (reqJson.projectId && !checkProjectPermission(ctx, reqJson.projectId)) {
+          ctx.response.code = 403;
+          ctx.response.json({error: 'You do not have permission to use the selected project'});
+          return;
+        }
+
+        if (old && !canEditTemplate(old, ctx.currentUser)) {
+          ctx.response.code = 403;
+          ctx.response.json({error: 'You do not have permission to edit this template'});
+          return;
+        }
+
         const template = prepareTemplate(reqJson, old, ctx.currentUser);
 
         if (!old) {
@@ -318,12 +446,15 @@ export const httpHandler = {
         }
 
         store.save({shared: updatedShared, private: updatedPrivate});
-        ctx.response.json(template);
+        
+        const responseTemplate = processTemplateForResponse(template, ctx.currentUser);
+        ctx.response.json(responseTemplate || template);
       }
     },
     {
       method: 'DELETE',
       path: 'templates',
+      // eslint-disable-next-line complexity
       handle: (ctx: Context) => {
         const id = ctx.request.getParameter('id');
         if (!id) {
@@ -339,6 +470,18 @@ export const httpHandler = {
         if (!template) {
           ctx.response.code = 404;
           ctx.response.json({error: 'Template not found'});
+          return;
+        }
+
+        if (template.projectId && !checkProjectPermission(ctx, template.projectId)) {
+          ctx.response.code = 403;
+          ctx.response.json({error: 'You do not have permission to access the project of this template'});
+          return;
+        }
+
+        if (!canEditTemplate(template, ctx.currentUser)) {
+          ctx.response.code = 403;
+          ctx.response.json({error: 'You do not have permission to delete this template'});
           return;
         }
 
@@ -369,20 +512,25 @@ export const httpHandler = {
         const idsSet = new Set(ids);
         const now = Date.now();
 
-        const toDelShared = shared.filter(t => idsSet.has(t.id));
-        const toDelPriv = priv.filter(t => idsSet.has(t.id));
+        const toDelShared = shared.filter(t => idsSet.has(t.id) && checkProjectPermission(ctx, t.projectId) && canEditTemplate(t, ctx.currentUser));
+        const toDelPriv = priv.filter(t => idsSet.has(t.id) && checkProjectPermission(ctx, t.projectId) && canEditTemplate(t, ctx.currentUser));
         const deletedIds = new Set([...toDelShared, ...toDelPriv].map(t => t.id));
-        const toDelPre = PREDEFINED_TEMPLATES.filter(t => idsSet.has(t.id) && !deletedIds.has(t.id));
+        const toDelPre = PREDEFINED_TEMPLATES.filter(t => idsSet.has(t.id) && !deletedIds.has(t.id) && checkProjectPermission(ctx, t.projectId) && canEditTemplate(t, ctx.currentUser));
 
         if (!toDelShared.length && !toDelPriv.length && !toDelPre.length) {
-          ctx.response.code = 404;
-          ctx.response.json({error: 'No templates found'});
+          ctx.response.code = 403;
+          ctx.response.json({error: 'No templates found or you do not have permission to delete them'});
           return;
         }
 
+        const actuallyDeletedIds = new Set([
+          ...toDelShared.map(t => t.id),
+          ...toDelPriv.map(t => t.id)
+        ]);
+
         store.save({
-          shared: shared.filter(t => !idsSet.has(t.id)),
-          private: priv.filter(t => !idsSet.has(t.id)),
+          shared: shared.filter(t => !actuallyDeletedIds.has(t.id)),
+          private: priv.filter(t => !actuallyDeletedIds.has(t.id)),
           deletedShared: [...deletedShared, ...[...toDelShared, ...toDelPre].map(t => ({...t, deletedAt: now, isPrivate: false}))],
           deletedPrivate: [...deletedPrivate, ...toDelPriv.map(t => ({...t, deletedAt: now, isPrivate: true}))]
         });
@@ -393,6 +541,7 @@ export const httpHandler = {
     {
       method: 'POST',
       path: 'restore-template',
+      // eslint-disable-next-line complexity
       handle: (ctx: Context) => {
         const id = ctx.request.getParameter('id');
         const store = new TemplateStore(ctx);
@@ -402,6 +551,18 @@ export const httpHandler = {
         if (!template) {
           ctx.response.code = 404;
           ctx.response.json({error: 'Template not found in trash'});
+          return;
+        }
+
+        if (template.projectId && !checkProjectPermission(ctx, template.projectId)) {
+          ctx.response.code = 403;
+          ctx.response.json({error: 'You do not have permission to access the project of this template'});
+          return;
+        }
+
+        if (!canEditTemplate(template, ctx.currentUser)) {
+          ctx.response.code = 403;
+          ctx.response.json({error: 'You do not have permission to restore this template'});
           return;
         }
 
@@ -433,14 +594,19 @@ export const httpHandler = {
         const {shared, private: priv, deletedShared, deletedPrivate} = getAndPurgeTemplates(ctx, true);
         const idsSet = new Set(ids);
 
-        const toResShared = deletedShared.filter(t => idsSet.has(t.id));
-        const toResPriv = deletedPrivate.filter(t => idsSet.has(t.id));
+        const toResShared = deletedShared.filter(t => idsSet.has(t.id) && checkProjectPermission(ctx, t.projectId) && canEditTemplate(t, ctx.currentUser));
+        const toResPriv = deletedPrivate.filter(t => idsSet.has(t.id) && checkProjectPermission(ctx, t.projectId) && canEditTemplate(t, ctx.currentUser));
 
         if (!toResShared.length && !toResPriv.length) {
-          ctx.response.code = 404;
-          ctx.response.json({error: 'No templates found in trash'});
+          ctx.response.code = 403;
+          ctx.response.json({error: 'No templates found in trash or you do not have permission to restore them'});
           return;
         }
+
+        const actuallyRestoredIds = new Set([
+          ...toResShared.map(t => t.id),
+          ...toResPriv.map(t => t.id)
+        ]);
 
         const clean = (list: Template[]) => list.map(t => {
           const r = {...t};
@@ -451,8 +617,8 @@ export const httpHandler = {
         store.save({
           shared: [...shared, ...clean(toResShared)],
           private: [...priv, ...clean(toResPriv)],
-          deletedShared: deletedShared.filter(t => !idsSet.has(t.id)),
-          deletedPrivate: deletedPrivate.filter(t => !idsSet.has(t.id))
+          deletedShared: deletedShared.filter(t => !actuallyRestoredIds.has(t.id)),
+          deletedPrivate: deletedPrivate.filter(t => !actuallyRestoredIds.has(t.id))
         });
 
         ctx.response.json({success: true, count: toResShared.length + toResPriv.length});
@@ -461,6 +627,7 @@ export const httpHandler = {
     {
       method: 'DELETE',
       path: 'permanent-template',
+      // eslint-disable-next-line complexity
       handle: (ctx: Context) => {
         const id = ctx.request.getParameter('id');
         if (!id) {
@@ -471,6 +638,25 @@ export const httpHandler = {
 
         const store = new TemplateStore(ctx);
         const {deletedShared, deletedPrivate} = getAndPurgeTemplates(ctx, true);
+        const template = deletedShared.find(t => t.id === id) || deletedPrivate.find(t => t.id === id);
+
+        if (!template) {
+          ctx.response.code = 404;
+          ctx.response.json({error: 'Template not found'});
+          return;
+        }
+
+        if (template.projectId && !checkProjectPermission(ctx, template.projectId)) {
+          ctx.response.code = 403;
+          ctx.response.json({error: 'You do not have permission to access the project of this template'});
+          return;
+        }
+
+        if (!canEditTemplate(template, ctx.currentUser)) {
+          ctx.response.code = 403;
+          ctx.response.json({error: 'You do not have permission to permanently delete this template'});
+          return;
+        }
 
         const favs = store.favorites;
         if (favs.includes(id)) {
@@ -512,7 +698,8 @@ export const httpHandler = {
         ctx.response.json({
           favorites: store.favorites,
           showFavoritesOnly: store.showFavoritesOnly,
-          authorFilter: store.authorFilter
+          authorFilter: store.authorFilter,
+          projectFilter: store.projectFilter
         });
       }
     },
@@ -524,6 +711,16 @@ export const httpHandler = {
         const store = new TemplateStore(ctx);
         store.authorFilter = authorIds || [];
         ctx.response.json({authorFilter: store.authorFilter});
+      }
+    },
+    {
+      method: 'POST',
+      path: 'project-filter',
+      handle: (ctx: Context) => {
+        const {projectIds} = ctx.request.json<{projectIds: string[]}>();
+        const store = new TemplateStore(ctx);
+        store.projectFilter = projectIds || [];
+        ctx.response.json({projectFilter: store.projectFilter});
       }
     },
     {

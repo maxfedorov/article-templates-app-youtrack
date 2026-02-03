@@ -18,17 +18,20 @@ export const useTemplateManager = (host: HostAPI, api: API) => {
   const [favorites, setFavorites] = useState<string[]>([]);
   const [showFavoritesOnly, setShowFavoritesOnly] = useState<boolean>(false);
   const [authorFilter, setAuthorFilter] = useState<string[]>([]);
+  const [projectFilter, setProjectFilter] = useState<string[]>([]);
+  const [projects, setProjects] = useState<import('../api').YTProject[]>([]);
 
   const onSort = useCallback((params: {column: {id: string}, order: boolean}) => {
     setSortKey(params.column.id);
     setSortOrder(params.order);
   }, []);
 
+  // eslint-disable-next-line complexity
   const loadData = useCallback(async (additionalLoader?: () => Promise<void>) => {
     setLoading(true);
     try {
-      const [t, d, s, p] = await Promise.all([
-        api.getTemplates(), api.getDeletedTemplates(), api.getSettings(), api.getUserPreferences()
+      const [t, d, s, p, prjs] = await Promise.all([
+        api.getTemplates(), api.getDeletedTemplates(), api.getSettings(), api.getUserPreferences(), api.getProjects()
       ]);
       setTemplates(Array.isArray(t) ? t : []);
       setDeletedTemplates(Array.isArray(d) ? d : []);
@@ -36,6 +39,8 @@ export const useTemplateManager = (host: HostAPI, api: API) => {
       setFavorites(p.favorites ?? []);
       setShowFavoritesOnly(!!p.showFavoritesOnly);
       setAuthorFilter(p.authorFilter ?? []);
+      setProjectFilter(p.projectFilter ?? []);
+      setProjects(prjs);
       if (additionalLoader) {
         await additionalLoader();
       }
@@ -76,6 +81,36 @@ export const useTemplateManager = (host: HostAPI, api: API) => {
       console.error('Failed to set author filter', e);
     }
   }, [api]);
+
+  const onSetProjectFilter = useCallback(async (projectIds: string[]) => {
+    setProjectFilter(projectIds);
+    try {
+      await api.setProjectFilter(projectIds);
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.error('Failed to set project filter', e);
+    }
+  }, [api]);
+
+  const onClone = useCallback(async (template: Template) => {
+    try {
+      const clone: Omit<Template, 'id'> = {
+        name: `${template.name} Clone`,
+        summary: template.summary,
+        content: template.content,
+        isPrivate: true,
+        lockedForOthers: true
+      };
+      const saved = await api.addTemplate(clone);
+      setTemplates(prev => [...prev, saved]);
+      setFavorites(prev => [...prev, saved.id]);
+      host.alert('Template cloned', 'success' as AlertType.SUCCESS);
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.error('Failed to clone template', e);
+      host.alert('Failed to clone template', 'error' as AlertType.ERROR);
+    }
+  }, [api, host]);
 
   const onSave = useCallback(async () => {
     if (!editingTemplate?.name) {
@@ -147,16 +182,27 @@ export const useTemplateManager = (host: HostAPI, api: API) => {
   }, [api, host]);
 
   const onBulkDelete = useCallback(async () => {
-    const selected = Array.from(selection.getSelected()) as Template[];
-    if (!selected.length) {
+    const allSelected = Array.from(selection.getSelected()) as Template[];
+    const deletable = allSelected.filter(t => t.canEdit);
+    
+    if (!deletable.length) {
+      if (allSelected.length > 0) {
+        host.alert('No templates selected that you have permission to delete', 'error' as AlertType.ERROR);
+      }
       return;
     }
+
     try {
-      const ids = selected.map(t => t.id);
-      await api.bulkDeleteTemplates(ids);
-      setTemplates(prev => prev.filter(t => !ids.includes(t.id)));
-      setDeletedTemplates(prev => [...prev, ...selected.map(t => ({...t, deletedAt: Date.now()}))]);
-      host.alert(`${selected.length} templates moved to trash`, 'success' as AlertType.SUCCESS);
+      const deletableIds = deletable.map(t => t.id);
+      await api.bulkDeleteTemplates(deletableIds);
+      setTemplates(prev => prev.filter(t => !deletableIds.includes(t.id)));
+      setDeletedTemplates(prev => [...prev, ...deletable.map(t => ({...t, deletedAt: Date.now()}))]);
+      
+      if (deletable.length < allSelected.length) {
+        host.alert(`${deletable.length} templates moved to trash, ${allSelected.length - deletable.length} skipped (no permission)`, 'success' as AlertType.SUCCESS);
+      } else {
+        host.alert(`${deletable.length} templates moved to trash`, 'success' as AlertType.SUCCESS);
+      }
     } catch (e) {
       // eslint-disable-next-line no-console
       console.error('Failed to delete templates', e);
@@ -164,20 +210,31 @@ export const useTemplateManager = (host: HostAPI, api: API) => {
   }, [api, selection, host]);
 
   const onBulkRestore = useCallback(async () => {
-    const selected = Array.from(selection.getSelected()) as Template[];
-    if (!selected.length) {
+    const allSelected = Array.from(selection.getSelected()) as Template[];
+    const restorable = allSelected.filter(t => t.canEdit);
+
+    if (!restorable.length) {
+      if (allSelected.length > 0) {
+        host.alert('No templates selected that you have permission to restore', 'error' as AlertType.ERROR);
+      }
       return;
     }
+
     try {
-      const ids = selected.map(t => t.id);
-      await api.bulkRestoreTemplates(ids);
-      setTemplates(prev => [...prev, ...selected.map(t => {
+      const restorableIds = restorable.map(t => t.id);
+      await api.bulkRestoreTemplates(restorableIds);
+      setTemplates(prev => [...prev, ...restorable.map(t => {
         const r = {...t};
         delete r.deletedAt;
         return r;
       })]);
-      setDeletedTemplates(prev => prev.filter(t => !ids.includes(t.id)));
-      host.alert(`${selected.length} templates restored`, 'success' as AlertType.SUCCESS);
+      setDeletedTemplates(prev => prev.filter(t => !restorableIds.includes(t.id)));
+      
+      if (restorable.length < allSelected.length) {
+        host.alert(`${restorable.length} templates restored, ${allSelected.length - restorable.length} skipped (no permission)`, 'success' as AlertType.SUCCESS);
+      } else {
+        host.alert(`${restorable.length} templates restored`, 'success' as AlertType.SUCCESS);
+      }
     } catch (e) {
       // eslint-disable-next-line no-console
       console.error('Failed to restore templates', e);
@@ -212,12 +269,12 @@ export const useTemplateManager = (host: HostAPI, api: API) => {
     editingTemplate, setEditingTemplate,
     selection, setSelection,
     settings,
-    favorites, showFavoritesOnly, authorFilter,
+    favorites, showFavoritesOnly, authorFilter, projectFilter, projects,
     filter, setFilter,
     sortKey, sortOrder, onSort,
     loadData,
-    onSave, onDelete, onRestore, onPermanentDelete,
+    onSave, onDelete, onRestore, onPermanentDelete, onClone,
     onBulkDelete, onBulkRestore, onImport,
-    onToggleFavorite, onToggleShowFavorites, onSetAuthorFilter
+    onToggleFavorite, onToggleShowFavorites, onSetAuthorFilter, onSetProjectFilter
   };
 };

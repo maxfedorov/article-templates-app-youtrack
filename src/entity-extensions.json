@@ -31,6 +31,9 @@
         },
         "authorFilter": {
           "type": "string"
+        },
+        "projectFilter": {
+          "type": "string"
         }
       }
     }

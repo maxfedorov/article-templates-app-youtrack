@@ -15,6 +15,8 @@ export interface Template {
   isPrivate?: boolean;
   deletedAt?: number;
   author?: TemplateAuthor;
+  lockedForOthers?: boolean;
+  projectId?: string;
 }
 
 export interface YTProject {
@@ -39,6 +41,7 @@ export interface YTUser {
   fullName: string;
   email?: string;
   extensionProperties: Record<string, string>;
+  hasPermission: (permissionName: string, project?: YTProject) => boolean;
 }
 
 export interface Context {

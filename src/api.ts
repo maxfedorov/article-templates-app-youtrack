@@ -17,6 +17,10 @@ export interface Template {
   isPrivate?: boolean;
   deletedAt?: number;
   author?: TemplateAuthor;
+  lockedForOthers?: boolean;
+  projectId?: string;
+  projectName?: string;
+  canEdit?: boolean;
 }
 
 export interface YTProject {
@@ -32,6 +36,16 @@ export interface YTArticle {
   content?: string;
 }
 
+export interface CachedPermission {
+  global: boolean;
+  permission: {
+    key: string;
+  };
+  projects: Array<{
+    shortName: string;
+  }> | null;
+}
+
 export interface AppSettings {
   purgeIntervalDays: number;
 }
@@ -40,6 +54,7 @@ export interface UserPreferences {
   favorites: string[];
   showFavoritesOnly: boolean;
   authorFilter?: string[];
+  projectFilter?: string[];
 }
 
 interface ArticleDataResponse {
@@ -56,6 +71,8 @@ function extractResult<T>(response: unknown): T {
 }
 
 export default class API {
+  private projectsParamPromise: Promise<string> | null = null;
+
   constructor(private host: HostAPI) {}
 
   private async request<T>(path: string, options: object = {}): Promise<T> {
@@ -63,16 +80,56 @@ export default class API {
     return extractResult<T>(response);
   }
 
-  async getArticleData(): Promise<ArticleDataResponse> {
-    return this.request<ArticleDataResponse>('backend/article-data', {scope: true});
+  async getArticleData(): Promise<ArticleDataResponse & {projectId?: string}> {
+    return this.request<ArticleDataResponse & {projectId?: string}>('backend/article-data', {scope: true});
+  }
+
+  private async getProjectsParam(): Promise<string> {
+    if (this.projectsParamPromise) {
+      return this.projectsParamPromise;
+    }
+
+    this.projectsParamPromise = (async () => {
+      try {
+        const data = await this.host.fetchYouTrack<CachedPermission[]>('permissions/cache?fields=global,permission(key),projects(id,shortName,projectType(id))');
+        const permissions = extractResult<CachedPermission[]>(data);
+        const relevant = (permissions || []).filter(perm => perm.permission?.key === 'JetBrains.YouTrack.CREATE_ARTICLE');
+
+        if (relevant.length === 0) {
+          return '';
+        }
+
+        if (relevant.some(p => p.global)) {
+          return 'all';
+        }
+
+        const projects = new Set<string>();
+        relevant.forEach(p => {
+          (p.projects || []).forEach(pr => {
+            if (pr.shortName) {
+              projects.add(pr.shortName);
+            }
+          });
+        });
+
+        return Array.from(projects).join(',');
+      } catch (e) {
+        this.projectsParamPromise = null;
+        throw e;
+      }
+    })();
+
+    return this.projectsParamPromise;
   }
 
   async getTemplates(): Promise<Template[]> {
-    return this.request<Template[]>('backend-global/templates');
+    const projects = await this.getProjectsParam();
+    return this.request<Template[]>('backend-global/templates', {query: {projects}});
   }
 
   async getDeletedTemplates(): Promise<Template[]> {
-    return this.request<Template[]>('backend-global/deleted-templates');
+    const projects = await this.getProjectsParam();
+    return this.request<Template[]>('backend-global/deleted-templates', {query: {projects}});
   }
 
   async addTemplate(template: Omit<Template, 'id'>): Promise<Template> {
@@ -176,5 +233,13 @@ export default class API {
       body: {authorIds}
     });
     return res.authorFilter;
+  }
+
+  async setProjectFilter(projectIds: string[]): Promise<string[]> {
+    const res = await this.request<{projectFilter: string[]}>('backend-global/project-filter', {
+      method: 'POST',
+      body: {projectIds}
+    });
+    return res.projectFilter;
   }
 }

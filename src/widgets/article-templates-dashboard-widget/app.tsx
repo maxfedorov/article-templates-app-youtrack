@@ -10,7 +10,10 @@ import Icon from '@jetbrains/ring-ui-built/components/icon/icon';
 import fileCreateIcon from '@jetbrains/icons/file-create';
 import trashIcon from '@jetbrains/icons/trash';
 import pencilIcon from '@jetbrains/icons/pencil';
+import eyeIcon from '@jetbrains/icons/eye';
+import copyIcon from '@jetbrains/icons/copy';
 import lockIcon from '@jetbrains/icons/lock';
+import Tooltip from '@jetbrains/ring-ui-built/components/tooltip/tooltip';
 import historyIcon from '@jetbrains/icons/history';
 import starIcon from '@jetbrains/icons/star-empty';
 import starFilledIcon from '@jetbrains/icons/star-filled';
@@ -80,7 +83,10 @@ const AppComponent: React.FC = () => {
   }, [loadArticles]);
 
   const onCreateArticle = useCallback(async (template: Template) => {
-    const project = selectedProjects[template.id];
+    const project = template.projectId 
+      ? projects.find(p => p.shortName === template.projectId || p.id === template.projectId)
+      : selectedProjects[template.id];
+
     if (!project?.shortName) {
       host.alert('Please select a project first', 'error' as AlertType.ERROR);
       return;
@@ -100,7 +106,23 @@ const AppComponent: React.FC = () => {
       // eslint-disable-next-line no-console
       console.error('Failed to create article', e);
     }
-  }, [selectedProjects, selectedParents]);
+  }, [selectedProjects, selectedParents, projects]);
+
+  const {
+    templates, deletedTemplates, viewMode, filter, sortKey, sortOrder, favorites, showFavoritesOnly, 
+    authorFilter, projectFilter, onSetAuthorFilter, onSetProjectFilter, setSelection
+  } = manager;
+
+  useEffect(() => {
+    templates.forEach(t => {
+      if (t.projectId && !selectedProjects[t.id]) {
+        const p = projects.find(prj => prj.shortName === t.projectId || prj.id === t.projectId);
+        if (p) {
+          onProjectSelect(t.id, {key: p.shortName || p.id, label: p.name, shortName: p.shortName});
+        }
+      }
+    });
+  }, [templates, projects, onProjectSelect, selectedProjects]);
 
   const {loadData} = manager;
   useEffect(() => {
@@ -109,8 +131,6 @@ const AppComponent: React.FC = () => {
       setProjects(pData || []);
     });
   }, [loadData]);
-
-  const {templates, deletedTemplates, viewMode, filter, sortKey, sortOrder, favorites, showFavoritesOnly, authorFilter} = manager;
 
   const authors = useMemo(() => {
     const map = new Map<string, string>();
@@ -132,6 +152,19 @@ const AppComponent: React.FC = () => {
     return result.sort((a, b) => a.label.localeCompare(b.label));
   }, [templates]);
 
+  const filterProjects = useMemo(() => {
+    const pSet = new Map<string, string>();
+    templates.forEach(t => {
+      if (t.projectId && t.projectName) {
+        pSet.set(t.projectId, t.projectName);
+      } else {
+        pSet.set('all', 'All projects');
+      }
+    });
+    const result = Array.from(pSet.entries()).map(([key, label]) => ({key, label}));
+    return result.sort((a, b) => a.label.localeCompare(b.label));
+  }, [templates]);
+
   const visibleData = useMemo(() => {
     let data = (viewMode === 'active' ? templates : deletedTemplates) as Template[];
     if (viewMode === 'active' && showFavoritesOnly) {
@@ -146,28 +179,40 @@ const AppComponent: React.FC = () => {
         return authorFilter.includes(authorId);
       });
     }
+    if (projectFilter.length > 0) {
+      data = data.filter(t => {
+        if (!t.projectId) {
+          return projectFilter.includes('all');
+        }
+        return projectFilter.includes(t.projectId);
+      });
+    }
     if (filter.trim()) {
       data = data.filter(t => t.name.toLowerCase().includes(filter.toLowerCase()));
     }
     return sortTemplates(data, sortKey, sortOrder);
-  }, [templates, deletedTemplates, viewMode, filter, sortKey, sortOrder, favorites, showFavoritesOnly, authorFilter]);
+  }, [templates, deletedTemplates, viewMode, filter, sortKey, sortOrder, favorites, showFavoritesOnly, authorFilter, projectFilter]);
 
-  const {setSelection, onSetAuthorFilter} = manager;
   useEffect(() => {
     setSelection(new Selection({data: visibleData}));
   }, [visibleData, setSelection]);
 
   useEffect(() => {
-    if (authorFilter.length > 0 && visibleData.length === 0) {
+    if (visibleData.length === 0 && !filter.trim()) {
       const baseData = viewMode === 'active' ? templates : deletedTemplates;
       if (baseData.length > 0) {
-        onSetAuthorFilter([]);
+        if (authorFilter.length > 0) {
+          onSetAuthorFilter([]);
+        }
+        if (projectFilter.length > 0) {
+          onSetProjectFilter([]);
+        }
       }
     }
-  }, [visibleData.length, authorFilter, templates, deletedTemplates, viewMode, onSetAuthorFilter]);
+  }, [visibleData.length, filter, authorFilter, projectFilter, templates, deletedTemplates, viewMode, onSetAuthorFilter, onSetProjectFilter]);
 
   const projectOptions: SelectedItem[] = useMemo(() => projects.map(p => ({
-    key: p.id, label: p.name, shortName: p.shortName
+    key: p.shortName || p.id, label: p.name, shortName: p.shortName
   })), [projects]);
 
   const columns = manager.viewMode === 'active' ? [
@@ -209,21 +254,41 @@ const AppComponent: React.FC = () => {
     },
     {
       id: 'project', title: 'Project', width: '200px',
-      getValue: (t: Template) => (
-        <Select<SelectedItem>
-          type={SelectType.INLINE} 
-          data={projectOptions}
-          selected={selectedProjects[t.id] || null}
-          onSelect={item => onProjectSelect(t.id, item)}
-          filter 
-          clear
-        />
-      )
+      getValue: (t: Template) => {
+        const isLocked = !!t.projectId;
+        const project = isLocked 
+          ? {key: t.projectId!, label: t.projectName || t.projectId!}
+          : (selectedProjects[t.id] || null);
+
+        const content = (
+          <Select<SelectedItem>
+            type={SelectType.INLINE} 
+            data={projectOptions}
+            selected={project as SelectedItem}
+            onSelect={item => onProjectSelect(t.id, item)}
+            filter 
+            clear
+            disabled={isLocked}
+            maxHeight={400}
+          />
+        );
+
+        if (isLocked) {
+          return (
+            <Tooltip title="This template is tied to a specific project and cannot be used in others">
+              {content}
+            </Tooltip>
+          );
+        }
+        return content;
+      }
     },
     {
       id: 'parent', title: 'Parent Article', width: '200px',
       getValue: (t: Template) => {
-        const project = selectedProjects[t.id];
+        const project = t.projectId 
+          ? projects.find(p => p.shortName === t.projectId || p.id === t.projectId)
+          : selectedProjects[t.id];
         const articles = project?.shortName ? (articlesByProject[project.shortName] || []) : [];
         const options: SelectedItem[] = articles.map(a => ({key: a.idReadable, label: a.summary}));
 
@@ -240,17 +305,33 @@ const AppComponent: React.FC = () => {
             loading={!!(project && !articlesByProject[project.shortName!])}
             disableScrollToActive 
             preventListOverscroll
+            maxHeight={400}
           />
         );
       }
     },
     {
       id: 'create', width: '40px',
+      getValue: (t: Template) => {
+        const project = t.projectId 
+          ? projects.find(p => p.shortName === t.projectId || p.id === t.projectId)
+          : selectedProjects[t.id];
+        return (
+          <Button 
+            icon={fileCreateIcon} 
+            onClick={() => onCreateArticle(t)}
+            title={!project ? "Please select a project first" : "Create Article"}
+          />
+        );
+      }
+    },
+    {
+      id: 'clone', width: '40px',
       getValue: (t: Template) => (
         <Button 
-          icon={fileCreateIcon} 
-          onClick={() => onCreateArticle(t)}
-          title={!selectedProjects[t.id] ? "Please select a project first" : "Create Article"}
+          icon={copyIcon} 
+          onClick={() => manager.onClone(t)}
+          title="Clone template"
         />
       )
     },
@@ -258,9 +339,9 @@ const AppComponent: React.FC = () => {
       id: 'edit', width: '40px',
       getValue: (t: Template) => (
         <Button 
-          icon={pencilIcon} 
+          icon={t.canEdit ? pencilIcon : eyeIcon} 
           onClick={() => manager.setEditingTemplate(t)} 
-          title="Edit Template"
+          title={t.canEdit ? "Edit Template" : "View Template"}
         />
       )
     },
@@ -272,6 +353,7 @@ const AppComponent: React.FC = () => {
           icon={trashIcon} 
           onClick={() => manager.onDelete(t.id)} 
           title="Delete Template"
+          disabled={!t.canEdit}
         />
       )
     }
@@ -312,6 +394,18 @@ const AppComponent: React.FC = () => {
       )
     },
     {
+      id: 'project', title: 'Project', width: '200px',
+      getValue: (t: Template) => (
+        <Select<SelectedItem>
+          type={SelectType.INLINE} 
+          data={projectOptions}
+          selected={t.projectId ? {key: t.projectId, label: t.projectName || t.projectId} as SelectedItem : {key: 'all', label: 'All projects'} as SelectedItem}
+          disabled
+          maxHeight={400}
+        />
+      )
+    },
+    {
       id: 'restore', width: '40px',
       getValue: (t: Template) => (
         <Button 
@@ -345,6 +439,8 @@ const AppComponent: React.FC = () => {
         onCancel={() => manager.setEditingTemplate(null)}
         onChange={manager.setEditingTemplate} 
         onDelete={manager.onDelete}
+        projects={projects}
+        isReadOnly={manager.editingTemplate.id ? !manager.editingTemplate.canEdit : false}
       />
     );
   }
@@ -352,7 +448,7 @@ const AppComponent: React.FC = () => {
   return (
     <div className="widget">
       <TemplateToolbar
-        viewMode={manager.viewMode} 
+        viewMode={viewMode} 
         onAdd={() => manager.setEditingTemplate({isPrivate: true})}
         onImport={manager.onImport} 
         onShowDeleted={() => manager.setViewMode('deleted')}
@@ -361,13 +457,16 @@ const AppComponent: React.FC = () => {
         onBulkRestore={manager.onBulkRestore}
         selectedCount={manager.selection.getSelected().size}
         purgeIntervalDays={manager.settings?.purgeIntervalDays}
-        filter={manager.filter} 
+        filter={filter} 
         onFilterChange={manager.setFilter}
-        showFavoritesOnly={manager.showFavoritesOnly}
+        showFavoritesOnly={showFavoritesOnly}
         onToggleShowFavorites={manager.onToggleShowFavorites}
         authors={authors}
-        authorFilter={manager.authorFilter}
-        onAuthorFilterChange={manager.onSetAuthorFilter}
+        authorFilter={authorFilter}
+        onAuthorFilterChange={onSetAuthorFilter}
+        projects={filterProjects}
+        projectFilter={projectFilter}
+        onProjectFilterChange={onSetProjectFilter}
       />
       <Table
         className="templateTable"

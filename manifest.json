@@ -31,7 +31,7 @@
       "name": "Create article template",
       "indexPath": "create-template-article-widget/index.html",
       "extensionPoint": "ARTICLE_OPTIONS_MENU_ITEM",
-      "guard": "({entity}) => !entity.draft",
+      "guard": "({entity}) => !entity.draft && !entity.isEditing",
       "iconPath": "create-template-article-widget/widget-icon.svg",
       "description": "Article menu button to create a template from the current article.",
       "permissions": [

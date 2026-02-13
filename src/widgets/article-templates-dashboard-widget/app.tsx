@@ -80,10 +80,7 @@ const AppComponent: React.FC = () => {
   const onProjectSelect = useCallback((templateId: string, project: SelectedItem | null) => {
     setSelectedProjects(prev => ({...prev, [templateId]: project}));
     setSelectedParents(prev => ({...prev, [templateId]: null}));
-    if (project?.shortName) {
-      loadArticles(project.shortName);
-    }
-  }, [loadArticles]);
+  }, []);
 
   const onCreateArticle = useCallback(async (template: Template) => {
     const project = template.projectId 
@@ -116,16 +113,6 @@ const AppComponent: React.FC = () => {
     authorFilter, projectFilter, onSetAuthorFilter, onSetProjectFilter, setSelection
   } = manager;
 
-  useEffect(() => {
-    templates.forEach(t => {
-      if (t.projectId && !selectedProjects[t.id]) {
-        const p = projects.find(prj => prj.shortName === t.projectId || prj.id === t.projectId);
-        if (p) {
-          onProjectSelect(t.id, {key: p.shortName || p.id, label: p.name, shortName: p.shortName});
-        }
-      }
-    });
-  }, [templates, projects, onProjectSelect, selectedProjects]);
 
   const {loadData} = manager;
   useEffect(() => {
@@ -302,6 +289,7 @@ const AppComponent: React.FC = () => {
             data={options}
             selected={selectedParents[t.id] || null}
             onSelect={item => setSelectedParents(prev => ({...prev, [t.id]: item}))}
+            onOpen={() => project?.shortName && loadArticles(project.shortName)}
             filter 
             clear 
             disabled={!project}

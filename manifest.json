@@ -2,8 +2,8 @@
   "name": "article-templates-app",
   "title": "Article templates",
   "description": "Allows you to create and manage article templates, create a template from an existing article, and create new articles from templates to streamline your Knowledge Base workflow.",
-  "version": "1.2.0",
-  "changeNotes": "<h3>Version 1.2.0</h3>\n<ul>\n    <li><b>Template Locking:</b> Added a \"Locked for others\" toggle. When enabled, only the template author and administrators can edit or delete the template. Others will see it in read-only mode (indicated by a view icon).</li>\n    <li><b>Project Binding:</b> Templates can now be tied to a specific project. This restricts the template's usage to the selected project only.</li>\n    <li><b>Project Filtering:</b> A new project filter in the dashboard helps you find templates related to specific projects.</li>\n    <li><b>Template Cloning:</b> Quickly create a copy of any available template with the new \"Clone\" button.</li>\n</ul>",
+  "version": "1.3.0",
+  "changeNotes": "<h3>Version 1.3.0</h3>\n<ul>\n    <li><b>Apply Template Widget:</b> Added a new widget in the article draft options menu that allows you to quickly apply a template to an existing article draft.</li>\n</ul>",
   "$schema": "https://json.schemastore.org/youtrack-app.json",
   "vendor": {
     "name": "Maksim Fedorov",
@@ -37,6 +37,21 @@
       "permissions": [
         "CREATE_ARTICLE"
       ]
+    },
+    {
+      "key": "apply-template-article-widget",
+      "name": "Apply article template",
+      "indexPath": "apply-template-article-widget/index.html",
+      "extensionPoint": "ARTICLE_OPTIONS_MENU_ITEM",
+      "guard": "({entity}) => entity.draft",
+      "iconPath": "apply-template-article-widget/widget-icon.svg",
+      "description": "Article menu button to apply a template to the article draft.",
+      "permissions": [
+        "CREATE_ARTICLE"
+      ],
+      "expectedDimensions": {
+        "height": 400
+      }
     }
   ]
 }

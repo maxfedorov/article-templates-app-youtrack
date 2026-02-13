@@ -21,6 +21,7 @@ const api = new API(host);
 const AppComponent: React.FunctionComponent = () => {
   const [projects, setProjects] = useState<YTProject[]>([]);
   const [templates, setTemplates] = useState<Template[]>([]);
+  const [favorites, setFavorites] = useState<string[]>([]);
   const [selectedProject, setSelectedProject] = useState<SelectedItem | null>(null);
   const [selectedTemplate, setSelectedTemplate] = useState<SelectedItem | null>(null);
   const [selectedParent, setSelectedParent] = useState<SelectedItem | null>(null);
@@ -32,12 +33,14 @@ const AppComponent: React.FunctionComponent = () => {
   useEffect(() => {
     async function loadInitialData() {
       try {
-        const [projectsData, templatesData] = await Promise.all([
+        const [projectsData, templatesData, prefs] = await Promise.all([
           api.getProjects(),
-          api.getTemplates()
+          api.getTemplates(),
+          api.getUserPreferences()
         ]);
         setProjects(projectsData || []);
         setTemplates(templatesData || []);
+        setFavorites(prefs?.favorites || []);
       } catch (e) {
         // eslint-disable-next-line no-console
         console.error('Failed to load initial data', e);
@@ -110,8 +113,17 @@ const AppComponent: React.FunctionComponent = () => {
       return [];
     }
     const projectKey = selectedProject.shortName || selectedProject.key;
-    return templates.filter(t => !t.projectId || t.projectId === projectKey);
-  }, [templates, selectedProject]);
+    const filtered = templates.filter(t => !t.projectId || t.projectId === projectKey);
+    
+    return [...filtered].sort((a, b) => {
+      const isFavA = favorites.includes(a.id);
+      const isFavB = favorites.includes(b.id);
+      if (isFavA !== isFavB) {
+        return isFavA ? -1 : 1;
+      }
+      return a.name.localeCompare(b.name);
+    });
+  }, [templates, selectedProject, favorites]);
 
   const templateOptions: SelectedItem[] = useMemo(() => filteredTemplates.map(t => ({
     key: t.id, label: t.name

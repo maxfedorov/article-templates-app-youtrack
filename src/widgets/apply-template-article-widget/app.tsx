@@ -6,6 +6,8 @@ import {Size} from '@jetbrains/ring-ui-built/components/input/input';
 import LoaderInline from '@jetbrains/ring-ui-built/components/loader-inline/loader-inline';
 import API, {Template, YTProject, YTArticle} from '../../api';
 import type {AlertType} from '@jetbrains/ring-ui-built/components/alert/alert';
+import starIcon from '@jetbrains/icons/star-empty';
+import starFilledIcon from '@jetbrains/icons/star-filled';
 
 import './app.css';
 
@@ -13,6 +15,8 @@ interface SelectedItem {
   key: string;
   label: string;
   shortName?: string;
+  glyph?: string;
+  className?: string;
 }
 
 const host = await YTApp.register();
@@ -126,8 +130,11 @@ const AppComponent: React.FunctionComponent = () => {
   }, [templates, selectedProject, favorites]);
 
   const templateOptions: SelectedItem[] = useMemo(() => filteredTemplates.map(t => ({
-    key: t.id, label: t.name
-  })), [filteredTemplates]);
+    key: t.id,
+    label: t.name,
+    glyph: favorites.includes(t.id) ? starFilledIcon : starIcon,
+    className: favorites.includes(t.id) ? 'favorite-active' : 'favorite-inactive'
+  })), [filteredTemplates, favorites]);
 
   const parentOptions: SelectedItem[] = useMemo(() => {
     const articles = selectedProject?.shortName ? (articlesByProject[selectedProject.shortName] || []) : [];

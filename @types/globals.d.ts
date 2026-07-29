@@ -79,7 +79,11 @@ type YTAppInterface = {
   locale: string;
   entity?: {
     id: string;
-    type: 'user' | 'article' | 'ticket' | 'project' | 'app'
+    type: 'user' | 'article' | 'ticket' | 'project' | 'app';
+    /** `true` for an article draft that has never been published. Same flag the widget `guard` receives. */
+    draft?: boolean;
+    /** `true` while a published article is opened in the content editor. */
+    isEditing?: boolean;
   };
   register: (appApi?: AppAPI) => Promise<HostAPI | EmbeddableWidgetAPI>;
 }

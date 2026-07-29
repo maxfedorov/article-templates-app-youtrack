@@ -57,9 +57,16 @@ export interface UserPreferences {
   projectFilter?: string[];
 }
 
-interface ArticleDataResponse {
+export interface ArticleDataResponse {
   summary: string;
   content: string;
+  projectId?: string;
+  url?: string;
+}
+
+export interface ApplyTemplateResponse {
+  success: boolean;
+  url?: string;
 }
 
 function extractResult<T>(response: unknown): T {
@@ -80,8 +87,24 @@ export default class API {
     return extractResult<T>(response);
   }
 
-  async getArticleData(): Promise<ArticleDataResponse & {projectId?: string}> {
-    return this.request<ArticleDataResponse & {projectId?: string}>('backend/article-data', {scope: true});
+  async getArticleData(): Promise<ArticleDataResponse> {
+    return this.request<ArticleDataResponse>('backend/article-data', {scope: true});
+  }
+
+  /** Applies a template to the article (draft) the widget is opened from. */
+  async applyTemplate(summary: string, content: string): Promise<ApplyTemplateResponse> {
+    return this.request<ApplyTemplateResponse>('backend/apply-template', {
+      scope: true,
+      method: 'POST',
+      body: {summary, content}
+    });
+  }
+
+  async incrementTemplateUsage(id: string): Promise<void> {
+    await this.request('backend-global/template-usage', {
+      method: 'POST',
+      query: {id}
+    });
   }
 
   private async getProjectsParam(): Promise<string> {

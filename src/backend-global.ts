@@ -321,6 +321,20 @@ export const httpHandler = {
       }
     },
     {
+      method: 'POST',
+      path: 'template-usage',
+      handle: (ctx: Context) => {
+        const id = ctx.request.getParameter('id');
+        if (!id) {
+          ctx.response.code = 400;
+          ctx.response.json({error: 'ID is required'});
+          return;
+        }
+        incrementTemplateUsage(ctx, id);
+        ctx.response.json({success: true});
+      }
+    },
+    {
       method: 'GET',
       path: 'templates',
       handle: (ctx: Context) => {

@@ -1,54 +1,135 @@
 import React, {memo, useCallback, useEffect, useState, useMemo} from 'react';
 import Button from '@jetbrains/ring-ui-built/components/button/button';
 import ButtonSet from '@jetbrains/ring-ui-built/components/button-set/button-set';
-import Select from '@jetbrains/ring-ui-built/components/select/select';
-import {Size} from '@jetbrains/ring-ui-built/components/input/input';
+import Text from '@jetbrains/ring-ui-built/components/text/text';
 import LoaderInline from '@jetbrains/ring-ui-built/components/loader-inline/loader-inline';
-import API, {Template, YTProject, YTArticle} from '../../api';
+import API, {ApplyTemplateResponse, ArticleDataResponse, Template} from '../../api';
+import {ApplyTemplateForm, TemplateOption} from '../../components/ApplyTemplateForm';
 import type {AlertType} from '@jetbrains/ring-ui-built/components/alert/alert';
 import starIcon from '@jetbrains/icons/star-empty';
 import starFilledIcon from '@jetbrains/icons/star-filled';
 
 import './app.css';
 
-interface SelectedItem {
-  key: string;
-  label: string;
-  shortName?: string;
-  glyph?: string;
-  className?: string;
-}
-
 const host = await YTApp.register();
 const api = new API(host);
 
+/**
+ * The widget is shown both for drafts (`entity.draft`) and for published articles opened in the
+ * content editor (`entity.isEditing`). YouTrack routes the app endpoint to `users/me/articleDrafts/{id}`
+ * only for drafts; for a published article the backend always receives the article itself, so the
+ * template cannot be written into the editing draft and lands in the published article instead.
+ */
+const isPublishedArticle = YTApp.entity?.type === 'article' && YTApp.entity?.draft !== true;
+
+/**
+ * Reloads the YouTrack page the widget is embedded into, so that the article
+ * editor picks up the summary and content written by the backend.
+ */
+function reloadArticlePage(url: string | undefined): void {
+  const referrer = document.referrer;
+  const target = referrer.includes('/articles') ? referrer : url;
+  if (target) {
+    window.parent.location.href = target;
+  }
+}
+
+function trimmed(value: string | undefined): string {
+  return value ? value.trim() : '';
+}
+
+function isDraftEmpty(article: ArticleDataResponse | null): boolean {
+  if (!article) {
+    return true;
+  }
+  return !trimmed(article.summary) && !trimmed(article.content);
+}
+
+/** An empty template summary must not wipe the title the user has already typed. */
+function resolveSummary(template: Template, article: ArticleDataResponse | null): string {
+  return template.summary || article?.summary || '';
+}
+
+function resolveUrl(result: ApplyTemplateResponse, article: ArticleDataResponse | null): string | undefined {
+  return result?.url || article?.url;
+}
+
+function toOption(template: Template, favorite: boolean): TemplateOption {
+  return {
+    key: template.id,
+    label: template.name,
+    glyph: favorite ? starFilledIcon : starIcon,
+    className: favorite ? 'favorite-active' : 'favorite-inactive'
+  };
+}
+
+function compareTemplates(a: Template, b: Template, isFavorite: (t: Template) => boolean): number {
+  if (isFavorite(a) !== isFavorite(b)) {
+    return isFavorite(a) ? -1 : 1;
+  }
+  return a.name.localeCompare(b.name);
+}
+
+function buildOptions(templates: Template[], projectId: string | undefined, favorites: string[]): TemplateOption[] {
+  const isFavorite = (t: Template) => favorites.includes(t.id);
+  return templates
+    .filter(t => !t.projectId || t.projectId === projectId)
+    .sort((a, b) => compareTemplates(a, b, isFavorite))
+    .map(t => toOption(t, isFavorite(t)));
+}
+
+async function trackUsage(templateId: string): Promise<void> {
+  try {
+    await api.incrementTemplateUsage(templateId);
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.error('Failed to update template usage counter', e);
+  }
+}
+
+async function applyToArticle(template: Template, article: ArticleDataResponse | null): Promise<void> {
+  const result = await api.applyTemplate(resolveSummary(template, article), template.content || '');
+  await trackUsage(template.id);
+  host.alert('Template applied', 'success' as AlertType.SUCCESS);
+  reloadArticlePage(resolveUrl(result, article));
+  host.closeWidget();
+}
+
+const LoadError: React.FunctionComponent<{onClose: () => void}> = ({onClose}) => (
+  <div className="widget">
+    <Text>{'Failed to read the current article.'}</Text>
+    <Text info>{'Reload the page and try again.'}</Text>
+    <ButtonSet>
+      <Button onClick={onClose}>{'Close'}</Button>
+    </ButtonSet>
+  </div>
+);
+
 const AppComponent: React.FunctionComponent = () => {
-  const [projects, setProjects] = useState<YTProject[]>([]);
+  const [article, setArticle] = useState<ArticleDataResponse | null>(null);
   const [templates, setTemplates] = useState<Template[]>([]);
   const [favorites, setFavorites] = useState<string[]>([]);
-  const [selectedProject, setSelectedProject] = useState<SelectedItem | null>(null);
-  const [selectedTemplate, setSelectedTemplate] = useState<SelectedItem | null>(null);
-  const [selectedParent, setSelectedParent] = useState<SelectedItem | null>(null);
-  const [articlesByProject, setArticlesByProject] = useState<Record<string, YTArticle[]>>({});
-  
+  const [selected, setSelected] = useState<TemplateOption | null>(null);
+
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [applying, setApplying] = useState(false);
 
   useEffect(() => {
     async function loadInitialData() {
       try {
-        const [projectsData, templatesData, prefs] = await Promise.all([
-          api.getProjects(),
+        const [articleData, templatesData, prefs] = await Promise.all([
+          api.getArticleData(),
           api.getTemplates(),
           api.getUserPreferences()
         ]);
-        setProjects(projectsData || []);
+        setArticle(articleData);
         setTemplates(templatesData || []);
         setFavorites(prefs?.favorites || []);
       } catch (e) {
         // eslint-disable-next-line no-console
         console.error('Failed to load initial data', e);
-        host.alert('Failed to load initial data', 'error' as AlertType.ERROR);
+        setLoadError(true);
       } finally {
         setLoading(false);
       }
@@ -56,157 +137,52 @@ const AppComponent: React.FunctionComponent = () => {
     loadInitialData();
   }, []);
 
-  const loadArticles = useCallback(async (projectKey: string) => {
-    if (articlesByProject[projectKey]) {
-      return;
-    }
-    try {
-      const articles = await api.getArticles(projectKey);
-      setArticlesByProject(prev => ({...prev, [projectKey]: articles}));
-    } catch (e) {
-      // eslint-disable-next-line no-console
-      console.error('Failed to load articles for project ' + projectKey, e);
-    }
-  }, [articlesByProject]);
-
-  const onProjectSelect = useCallback((project: SelectedItem | null) => {
-    setSelectedProject(project);
-    setSelectedTemplate(null);
-    setSelectedParent(null);
-  }, []);
-
-  // eslint-disable-next-line complexity
+  // The warning about replaced content is rendered upfront, so a single click applies the template.
   const onApply = useCallback(async () => {
-    if (!selectedProject || !selectedTemplate) {
-      return;
-    }
-
-    const template = templates.find(t => t.id === selectedTemplate.key);
+    const template = templates.find(t => t.id === selected?.key);
     if (!template) {
       return;
     }
-
     setApplying(true);
     try {
-      const result = await api.createDraft(
-        template.summary,
-        template.content,
-        selectedProject.shortName || selectedProject.key,
-        selectedParent?.key,
-        template.id
-      );
-      if (result.url) {
-        window.open(result.url, '_blank');
-        host.closeWidget();
-      }
+      await applyToArticle(template, article);
     } catch (e) {
       // eslint-disable-next-line no-console
-      console.error('Failed to create article', e);
+      console.error('Failed to apply template', e);
       host.alert('Failed to apply template', 'error' as AlertType.ERROR);
     } finally {
       setApplying(false);
     }
-  }, [selectedProject, selectedTemplate, selectedParent, templates]);
+  }, [templates, selected, article]);
 
-  const projectOptions: SelectedItem[] = useMemo(() => projects.map(p => ({
-    key: p.shortName || p.id, label: p.name, shortName: p.shortName
-  })), [projects]);
+  const onSelect = useCallback((option: TemplateOption | null) => setSelected(option), []);
 
-  const filteredTemplates = useMemo(() => {
-    if (!selectedProject) {
-      return [];
-    }
-    const projectKey = selectedProject.shortName || selectedProject.key;
-    const filtered = templates.filter(t => !t.projectId || t.projectId === projectKey);
-    
-    return [...filtered].sort((a, b) => {
-      const isFavA = favorites.includes(a.id);
-      const isFavB = favorites.includes(b.id);
-      if (isFavA !== isFavB) {
-        return isFavA ? -1 : 1;
-      }
-      return a.name.localeCompare(b.name);
-    });
-  }, [templates, selectedProject, favorites]);
+  const onCancel = useCallback(() => host.closeWidget(), []);
 
-  const templateOptions: SelectedItem[] = useMemo(() => filteredTemplates.map(t => ({
-    key: t.id,
-    label: t.name,
-    glyph: favorites.includes(t.id) ? starFilledIcon : starIcon,
-    className: favorites.includes(t.id) ? 'favorite-active' : 'favorite-inactive'
-  })), [filteredTemplates, favorites]);
-
-  const parentOptions: SelectedItem[] = useMemo(() => {
-    const articles = selectedProject?.shortName ? (articlesByProject[selectedProject.shortName] || []) : [];
-    return articles.map(a => ({
-      key: a.idReadable, label: a.summary
-    }));
-  }, [selectedProject, articlesByProject]);
+  const options = useMemo(
+    () => buildOptions(templates, article?.projectId, favorites),
+    [templates, article, favorites]
+  );
 
   if (loading) {
     return <LoaderInline/>;
   }
 
+  if (loadError) {
+    return <LoadError onClose={onCancel}/>;
+  }
+
   return (
-    <div className="widget">
-      <div className="field">
-        <div className="label">{'Select Project'}</div>
-        <Select<SelectedItem>
-          data={projectOptions}
-          selected={selectedProject}
-          onSelect={onProjectSelect}
-          filter
-          label="Select project"
-          maxHeight={400}
-          size={Size.FULL}
-        />
-      </div>
-
-      <div className="field">
-        <div className="label">{'Select Parent Article (optional)'}</div>
-        <Select<SelectedItem>
-          data={parentOptions}
-          selected={selectedParent}
-          onSelect={setSelectedParent}
-          onOpen={() => selectedProject?.shortName && loadArticles(selectedProject.shortName)}
-          filter
-          clear
-          disabled={!selectedProject}
-          loading={!!(selectedProject && selectedProject.shortName && !articlesByProject[selectedProject.shortName])}
-          label="Select parent article"
-          maxHeight={400}
-          size={Size.FULL}
-        />
-      </div>
-
-      <div className="field">
-        <div className="label">{'Select Template'}</div>
-        <Select<SelectedItem>
-          data={templateOptions}
-          selected={selectedTemplate}
-          onSelect={setSelectedTemplate}
-          filter
-          disabled={!selectedProject}
-          label={selectedProject ? "Select template" : "Select project first"}
-          maxHeight={400}
-          size={Size.FULL}
-        />
-      </div>
-
-      <ButtonSet>
-        <Button 
-          primary 
-          onClick={onApply} 
-          disabled={!selectedProject || !selectedTemplate || applying}
-          loader={applying}
-        >
-          {'Apply Template'}
-        </Button>
-        <Button onClick={() => host.closeWidget()}>
-          {'Cancel'}
-        </Button>
-      </ButtonSet>
-    </div>
+    <ApplyTemplateForm
+      options={options}
+      selected={selected}
+      published={isPublishedArticle}
+      notEmpty={!isDraftEmpty(article)}
+      applying={applying}
+      onSelect={onSelect}
+      onApply={onApply}
+      onCancel={onCancel}
+    />
   );
 };
 

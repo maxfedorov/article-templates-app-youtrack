@@ -31,7 +31,13 @@ export interface YTArticle {
   url: string;
   summary: string;
   content: string;
+  project?: YTProject;
   parentArticle?: YTArticle | null;
+}
+
+export interface ApplyTemplateRequest {
+  summary: string;
+  content: string;
 }
 
 export interface YTUser {

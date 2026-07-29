@@ -2,8 +2,8 @@
   "name": "article-templates-app",
   "title": "Article templates",
   "description": "Allows you to create and manage article templates, create a template from an existing article, and create new articles from templates to streamline your Knowledge Base workflow.",
-  "version": "1.3.0",
-  "changeNotes": "<h3>Version 1.3.0</h3>\n<ul>\n    <li><b>Apply Template Widget:</b> Added a new widget in the article draft options menu that allows you to quickly apply a template to an existing article draft.</li>\n</ul>",
+  "version": "1.4.0",
+  "changeNotes": "<h3>Version 1.4.0</h3>\n<ul>\n    <li><b>Apply Template In Place:</b> The \"Apply article template\" widget now fills in the current draft instead of creating another draft in a new tab.</li>\n    <li>Only the template has to be selected: the project is taken from the draft itself and the template list is filtered by it.</li>\n    <li>A draft that already has a summary or content shows a warning before the template replaces them.</li>\n    <li>The action is also available while a published article is edited. There the template is applied and saved immediately, and the widget warns about it upfront.</li>\n</ul>\n<h3>Version 1.3.0</h3>\n<ul>\n    <li><b>Apply Template Widget:</b> Added a new widget in the article draft options menu that allows you to quickly apply a template to an existing article draft.</li>\n</ul>",
   "$schema": "https://json.schemastore.org/youtrack-app.json",
   "vendor": {
     "name": "Maksim Fedorov",
@@ -43,14 +43,15 @@
       "name": "Apply article template",
       "indexPath": "apply-template-article-widget/index.html",
       "extensionPoint": "ARTICLE_OPTIONS_MENU_ITEM",
-      "guard": "({entity}) => entity.draft",
+      "guard": "({entity}) => entity.draft || entity.isEditing",
       "iconPath": "apply-template-article-widget/widget-icon.svg",
-      "description": "Article menu button to apply a template to the article draft.",
+      "description": "Article menu button to apply a template to the current article draft or to the article being edited.",
       "permissions": [
-        "CREATE_ARTICLE"
+        "CREATE_ARTICLE",
+        "UPDATE_ARTICLE"
       ],
       "expectedDimensions": {
-        "height": 400
+        "height": 300
       }
     }
   ]

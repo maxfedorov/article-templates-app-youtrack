@@ -18,7 +18,15 @@ const compat = new FlatCompat({
 export default tseslint.config(
   { files: ["**/*.{js,cjs,ts,tsx}"] },
   {
-    ignores: ["**/dist", "eslint.config.mjs"],
+    ignores: [
+      "**/dist",
+      "eslint.config.mjs",
+      // Generated files — rebuilt on every backend build, never hand-edited
+      "src/api/api.d.ts",
+      "src/api/api.zod.ts",
+      "src/api/app.d.ts",
+      "src/api/extended-*.d.ts",
+    ],
   },
   ...fixupConfigRules(
     compat.extends(
@@ -49,7 +57,37 @@ export default tseslint.config(
           allowConstantExport: true,
         },
       ],
-      "react/jsx-no-literals": "off"
+      // Relaxed rules for better developer experience
+      "react/jsx-no-literals": "off",
+      "@typescript-eslint/no-explicit-any": "warn", // Downgrade from error to warning
+      "@typescript-eslint/no-unused-vars": ["warn", { 
+        "argsIgnorePattern": "^_",
+        "varsIgnorePattern": "^_" 
+      }], // Allow unused vars prefixed with _
+      "no-console": "off", // Allow console.log during development
+      "@typescript-eslint/ban-ts-comment": ["error", {
+        "ts-ignore": "allow-with-description",
+        "ts-expect-error": "allow-with-description"
+      }], // Allow @ts-ignore with description
+      "@typescript-eslint/no-non-null-assertion": "warn", // Downgrade from error
+      "import/no-unresolved": "off", // Vite handles this
+      "import/extensions": "off", // Not needed with Vite
+      "new-cap": "off", // API methods like .GET() .POST() are uppercase by convention
+      "no-magic-numbers": ["warn", {
+        "ignore": [-1, 0, 1, 2, 100, 200, 201, 204, 400, 401, 403, 404, 500],
+        "ignoreArrayIndexes": true,
+        "ignoreDefaultValues": true,
+        "ignoreClassFieldInitialValues": true,
+        "enforceConst": true,
+      }],
+      "complexity": ["warn", 15],
+    }
+  },
+  {
+    files: ["vite-plugin-*.ts", "vite.config*.ts"],
+    rules: {
+      "complexity": "off",
+      "no-magic-numbers": "off",
     }
   },
   {

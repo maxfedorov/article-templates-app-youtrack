@@ -1,70 +1,107 @@
-import React, {memo, useCallback, useEffect, useState, useMemo} from 'react';
-import Button from '@jetbrains/ring-ui-built/components/button/button';
-import DropdownMenu from '@jetbrains/ring-ui-built/components/dropdown-menu/dropdown-menu';
-import type {ListDataItem} from '@jetbrains/ring-ui-built/components/list/list';
-import Text from '@jetbrains/ring-ui-built/components/text/text';
-import LoaderInline from '@jetbrains/ring-ui-built/components/loader-inline/loader-inline';
-import Table from '@jetbrains/ring-ui-built/components/table/table';
-import Selection from '@jetbrains/ring-ui-built/components/table/selection';
-import Select from '@jetbrains/ring-ui-built/components/select/select';
-import {Type as SelectType} from '@jetbrains/ring-ui-built/components/select/select';
-import Icon from '@jetbrains/ring-ui-built/components/icon/icon';
-import fileCreateIcon from '@jetbrains/icons/file-create';
-import trashIcon from '@jetbrains/icons/trash';
-import pencilIcon from '@jetbrains/icons/pencil';
-import eyeIcon from '@jetbrains/icons/eye';
-import copyIcon from '@jetbrains/icons/copy';
-import lockIcon from '@jetbrains/icons/lock';
-import Tooltip from '@jetbrains/ring-ui-built/components/tooltip/tooltip';
-import historyIcon from '@jetbrains/icons/history';
-import moreOptionsIcon from '@jetbrains/icons/more-options';
-import starIcon from '@jetbrains/icons/star-empty';
-import starFilledIcon from '@jetbrains/icons/star-filled';
-import API, {Template, YTProject, YTArticle} from '../../api';
-import type {AlertType} from '@jetbrains/ring-ui-built/components/alert/alert';
-import {TemplateEditor} from '../../components/TemplateEditor';
-import {TemplateToolbar} from '../../components/TemplateToolbar';
-import {useTemplateManager} from '../../hooks/useTemplateManager';
+/**
+ * Dashboard widget: the place where templates are managed and articles are created from them.
+ *
+ * The widget has three screens -- the active list, the trash and the template form -- and swaps
+ * between them instead of stacking dialogs, because a dashboard widget has no room for both.
+ */
 
-interface SelectedItem {
-  key: string;
-  label: string;
-  shortName?: string;
-}
+import React, {memo, useCallback, useEffect, useMemo, useState} from 'react';
+import LoaderInline from '@jetbrains/ring-ui-built/components/loader-inline/loader-inline';
+import Selection from '@jetbrains/ring-ui-built/components/table/selection';
+import Table from '@jetbrains/ring-ui-built/components/table/table';
+import Text from '@jetbrains/ring-ui-built/components/text/text';
+import type {AlertType} from '@jetbrains/ring-ui-built/components/alert/alert';
+import type {Template, YTArticle} from '@/common/types';
+import {createTemplatesApi} from '../shared/api';
+import {TemplateEditor} from '../shared/TemplateEditor';
+import {TemplateToolbar} from '../shared/TemplateToolbar';
+import type {FilterOption} from '../shared/TemplateToolbar';
+import {useTemplateManager} from '../shared/useTemplateManager';
+import {buildColumns} from './columns';
+import type {ProjectItem} from './columns';
 
 const host = await YTApp.register();
-const api = new API(host);
+const api = createTemplatesApi(host);
 
-const getVal = (t: Template, key: string) => {
-  if (key === 'name') {
-    return t.name.toLowerCase();
-  }
-  return (t.author?.login || 'n/a').toLowerCase();
-};
+const EMPTY_STYLE = {padding: '16px', textAlign: 'center' as const};
 
-const sortTemplates = (data: Template[], sortKey: string | undefined, sortOrder: boolean) => {
+/** Templates are sorted by name or by author login; the other columns are not sortable. */
+const getSortValue = (template: Template, sortKey: string): string =>
+  (sortKey === 'name' ? template.name : template.author?.login || 'n/a').toLowerCase();
+
+const sortTemplates = (data: Template[], sortKey: string | undefined, sortOrder: boolean): Template[] => {
   if (!sortKey) {
     return data;
   }
   return [...data].sort((a, b) => {
-    const vA = getVal(a, sortKey);
-    const vB = getVal(b, sortKey);
-    if (vA === vB) {
+    const first = getSortValue(a, sortKey);
+    const second = getSortValue(b, sortKey);
+    if (first === second) {
       return 0;
     }
-    const diff = vA < vB ? -1 : 1;
+    const diff = first < second ? -1 : 1;
     return sortOrder ? diff : -diff;
   });
 };
 
-const AppComponent: React.FC = () => {
-  const manager = useTemplateManager(host, api);
-  const [projects, setProjects] = useState<YTProject[]>([]);
-  const [selectedProjects, setSelectedProjects] = useState<Record<string, SelectedItem | null>>({});
-  const [articlesByProject, setArticlesByProject] = useState<Record<string, YTArticle[]>>({});
-  const [selectedParents, setSelectedParents] = useState<Record<string, SelectedItem | null>>({});
+/** Authors offered by the filter; templates saved before the author was recorded land under `n/a`. */
+function collectAuthors(templates: Template[]): FilterOption[] {
+  const byId = new Map<string, string>();
+  let hasNoAuthor = false;
 
-  const loadArticles = useCallback(async (projectKey: string) => {
+  templates.forEach(template => {
+    const authorId = template.author?.id || template.author?.login;
+    if (authorId && template.author?.login) {
+      byId.set(authorId, template.author.login);
+    } else {
+      hasNoAuthor = true;
+    }
+  });
+
+  const options = Array.from(byId.entries()).map(([key, label]) => ({key, label}));
+  if (hasNoAuthor) {
+    options.push({key: 'no-author', label: 'n/a'});
+  }
+  return options.sort((a, b) => a.label.localeCompare(b.label));
+}
+
+/** Only the projects actually used by a template are offered, plus "All projects" for unbound ones. */
+function collectProjects(templates: Template[]): FilterOption[] {
+  const byId = new Map<string, string>();
+  templates.forEach(template => {
+    if (template.projectId && template.projectName) {
+      byId.set(template.projectId, template.projectName);
+    } else {
+      byId.set('all', 'All projects');
+    }
+  });
+  return Array.from(byId.entries())
+    .map(([key, label]) => ({key, label}))
+    .sort((a, b) => a.label.localeCompare(b.label));
+}
+
+function matchesAuthor(template: Template, authorFilter: string[]): boolean {
+  const authorId = template.author?.id || template.author?.login;
+  return authorId ? authorFilter.includes(authorId) : authorFilter.includes('no-author');
+}
+
+const AppComponent: React.FunctionComponent = () => {
+  const manager = useTemplateManager(host, api);
+  const [selectedProjects, setSelectedProjects] = useState<Record<string, ProjectItem | null>>({});
+  const [selectedParents, setSelectedParents] = useState<Record<string, ProjectItem | null>>({});
+  const [articlesByProject, setArticlesByProject] = useState<Record<string, YTArticle[]>>({});
+
+  const {
+    templates, deletedTemplates, viewMode, filter, sortKey, sortOrder, favorites, showFavoritesOnly,
+    authorFilter, projectFilter, projects, onSetAuthorFilter, onSetProjectFilter, setSelection, loadData
+  } = manager;
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  /** The article list of a project is fetched once and kept for as long as the widget stays open. */
+  const onLoadArticles = useCallback(async (projectKey: string) => {
     if (articlesByProject[projectKey]) {
       return;
     }
@@ -72,18 +109,21 @@ const AppComponent: React.FC = () => {
       const articles = await api.getArticles(projectKey);
       setArticlesByProject(prev => ({...prev, [projectKey]: articles}));
     } catch (e) {
-      // eslint-disable-next-line no-console
-      console.error('Failed to load articles for project ' + projectKey, e);
+      console.error(`Failed to load articles for project ${projectKey}`, e);
     }
   }, [articlesByProject]);
 
-  const onProjectSelect = useCallback((templateId: string, project: SelectedItem | null) => {
+  const onProjectSelect = useCallback((templateId: string, project: ProjectItem | null) => {
     setSelectedProjects(prev => ({...prev, [templateId]: project}));
     setSelectedParents(prev => ({...prev, [templateId]: null}));
   }, []);
 
+  const onParentSelect = useCallback((templateId: string, parent: ProjectItem | null) => {
+    setSelectedParents(prev => ({...prev, [templateId]: parent}));
+  }, []);
+
   const onCreateArticle = useCallback(async (template: Template) => {
-    const project = template.projectId 
+    const project = template.projectId
       ? projects.find(p => p.shortName === template.projectId || p.id === template.projectId)
       : selectedProjects[template.id];
 
@@ -93,9 +133,9 @@ const AppComponent: React.FC = () => {
     }
     try {
       const result = await api.createDraft(
-        template.summary, 
-        template.content, 
-        project.shortName, 
+        template.summary,
+        template.content,
+        project.shortName,
         selectedParents[template.id]?.key,
         template.id
       );
@@ -103,329 +143,78 @@ const AppComponent: React.FC = () => {
         window.open(result.url, '_blank');
       }
     } catch (e) {
-      // eslint-disable-next-line no-console
       console.error('Failed to create article', e);
     }
-  }, [selectedProjects, selectedParents, projects]);
+  }, [projects, selectedProjects, selectedParents]);
 
-  const {
-    templates, deletedTemplates, viewMode, filter, sortKey, sortOrder, favorites, showFavoritesOnly, 
-    authorFilter, projectFilter, onSetAuthorFilter, onSetProjectFilter, setSelection
-  } = manager;
-
-
-  const {loadData} = manager;
-  useEffect(() => {
-    loadData(async () => {
-      const pData = await api.getProjects();
-      setProjects(pData || []);
-    });
-  }, [loadData]);
-
-  const authors = useMemo(() => {
-    const map = new Map<string, string>();
-    let hasNoAuthor = false;
-    
-    templates.forEach(t => {
-      const authorId = t.author?.id || t.author?.login;
-      if (authorId && t.author?.login) {
-        map.set(authorId, t.author.login);
-      } else {
-        hasNoAuthor = true;
-      }
-    });
-
-    const result = Array.from(map.entries()).map(([key, label]) => ({key, label}));
-    if (hasNoAuthor) {
-      result.push({key: 'no-author', label: 'n/a'});
-    }
-    return result.sort((a, b) => a.label.localeCompare(b.label));
-  }, [templates]);
-
-  const filterProjects = useMemo(() => {
-    const pSet = new Map<string, string>();
-    templates.forEach(t => {
-      if (t.projectId && t.projectName) {
-        pSet.set(t.projectId, t.projectName);
-      } else {
-        pSet.set('all', 'All projects');
-      }
-    });
-    const result = Array.from(pSet.entries()).map(([key, label]) => ({key, label}));
-    return result.sort((a, b) => a.label.localeCompare(b.label));
-  }, [templates]);
+  const authors = useMemo(() => collectAuthors(templates), [templates]);
+  const filterProjects = useMemo(() => collectProjects(templates), [templates]);
+  const projectOptions: ProjectItem[] = useMemo(
+    () => projects.map(p => ({key: p.shortName || p.id, label: p.name, shortName: p.shortName})),
+    [projects]
+  );
 
   const visibleData = useMemo(() => {
-    let data = (viewMode === 'active' ? templates : deletedTemplates) as Template[];
+    let data = viewMode === 'active' ? templates : deletedTemplates;
     if (viewMode === 'active' && showFavoritesOnly) {
       data = data.filter(t => favorites.includes(t.id));
     }
     if (authorFilter.length > 0) {
-      data = data.filter(t => {
-        const authorId = t.author?.id || t.author?.login;
-        if (!authorId) {
-          return authorFilter.includes('no-author');
-        }
-        return authorFilter.includes(authorId);
-      });
+      data = data.filter(t => matchesAuthor(t, authorFilter));
     }
     if (projectFilter.length > 0) {
-      data = data.filter(t => {
-        if (!t.projectId) {
-          return projectFilter.includes('all');
-        }
-        return projectFilter.includes(t.projectId);
-      });
+      data = data.filter(t => projectFilter.includes(t.projectId || 'all'));
     }
     if (filter.trim()) {
       data = data.filter(t => t.name.toLowerCase().includes(filter.toLowerCase()));
     }
     return sortTemplates(data, sortKey, sortOrder);
-  }, [templates, deletedTemplates, viewMode, filter, sortKey, sortOrder, favorites, showFavoritesOnly, authorFilter, projectFilter]);
+  }, [templates, deletedTemplates, viewMode, filter, sortKey, sortOrder, favorites, showFavoritesOnly,
+    authorFilter, projectFilter]);
 
   useEffect(() => {
     setSelection(new Selection({data: visibleData}));
   }, [visibleData, setSelection]);
 
+  // A filter that hides every row is a dead end -- usually the filtered author or project is simply
+  // gone -- so it is dropped as soon as it leaves the user with an empty table.
   useEffect(() => {
-    if (visibleData.length === 0 && !filter.trim()) {
-      const baseData = viewMode === 'active' ? templates : deletedTemplates;
-      if (baseData.length > 0) {
-        if (authorFilter.length > 0) {
-          onSetAuthorFilter([]);
-        }
-        if (projectFilter.length > 0) {
-          onSetProjectFilter([]);
-        }
-      }
+    const baseData = viewMode === 'active' ? templates : deletedTemplates;
+    if (visibleData.length > 0 || filter.trim() || baseData.length === 0) {
+      return;
     }
-  }, [visibleData.length, filter, authorFilter, projectFilter, templates, deletedTemplates, viewMode, onSetAuthorFilter, onSetProjectFilter]);
-
-  const projectOptions: SelectedItem[] = useMemo(() => projects.map(p => ({
-    key: p.shortName || p.id, label: p.name, shortName: p.shortName
-  })), [projects]);
-
-  const columns = manager.viewMode === 'active' ? [
-    {
-      id: 'favorite', width: '32px',
-      getValue: (t: Template) => {
-        const isFav = favorites.includes(t.id);
-        return (
-          <Button 
-            icon={isFav ? starFilledIcon : starIcon}
-            onClick={() => manager.onToggleFavorite(t.id)}
-            title={isFav ? "Remove from favorites" : "Add to favorites"}
-            className={isFav ? 'favorite-active' : 'favorite-inactive'}
-          />
-        );
-      }
-    },
-    {
-      id: 'name', title: 'Name', sortable: true, width: '300px',
-      getValue: (t: Template) => (
-        <div className="nameWrapper" style={{maxWidth: '300px', overflow: 'hidden'}}>
-          <Text className="nameText" title={t.name}>{t.name}</Text>
-          {t.isPrivate && (
-            <Icon 
-              glyph={lockIcon} 
-              title="Private" 
-              className="nameIcon"
-              style={{color: 'var(--ring-secondary-color)'}}
-            />
-          )}
-        </div>
-      )
-    },
-    {
-      id: 'author', title: 'Author', sortable: true, width: '150px',
-      getValue: (t: Template) => (
-        <Text style={{color: 'var(--ring-secondary-color)'}}>{t.author?.login || 'n/a'}</Text>
-      )
-    },
-    {
-      id: 'project', title: 'Project', width: '200px',
-      getValue: (t: Template) => {
-        const isLocked = !!t.projectId;
-        const project = isLocked 
-          ? {key: t.projectId!, label: t.projectName || t.projectId!}
-          : (selectedProjects[t.id] || null);
-
-        const content = (
-          <Select<SelectedItem>
-            type={SelectType.INLINE} 
-            data={projectOptions}
-            selected={project as SelectedItem}
-            onSelect={item => onProjectSelect(t.id, item)}
-            filter 
-            clear
-            disabled={isLocked}
-            maxHeight={400}
-          />
-        );
-
-        if (isLocked) {
-          return (
-            <Tooltip title="This template is tied to a specific project and cannot be used in others">
-              {content}
-            </Tooltip>
-          );
-        }
-        return content;
-      }
-    },
-    {
-      id: 'parent', title: 'Parent Article', width: '200px',
-      getValue: (t: Template) => {
-        const project = t.projectId 
-          ? projects.find(p => p.shortName === t.projectId || p.id === t.projectId)
-          : selectedProjects[t.id];
-        const articles = project?.shortName ? (articlesByProject[project.shortName] || []) : [];
-        const options: SelectedItem[] = articles.map(a => ({key: a.idReadable, label: a.summary}));
-
-        return (
-          <Select<SelectedItem>
-            className="tableSelect" 
-            type={SelectType.INLINE} 
-            data={options}
-            selected={selectedParents[t.id] || null}
-            onSelect={item => setSelectedParents(prev => ({...prev, [t.id]: item}))}
-            onOpen={() => project?.shortName && loadArticles(project.shortName)}
-            filter 
-            clear 
-            disabled={!project}
-            loading={!!(project && !articlesByProject[project.shortName!])}
-            disableScrollToActive 
-            preventListOverscroll
-            maxHeight={400}
-          />
-        );
-      }
-    },
-    {
-      id: 'create', width: '40px',
-      getValue: (t: Template) => {
-        const project = t.projectId 
-          ? projects.find(p => p.shortName === t.projectId || p.id === t.projectId)
-          : selectedProjects[t.id];
-        return (
-          <Button 
-            icon={fileCreateIcon} 
-            onClick={() => onCreateArticle(t)}
-            title={!project ? "Please select a project first" : "Create Article"}
-          />
-        );
-      }
-    },
-    {
-      id: 'actions', width: '40px',
-      getValue: (t: Template) => (
-        <DropdownMenu
-          anchor={<Button icon={moreOptionsIcon}/>}
-          data={[
-            {
-              label: 'Clone',
-              glyph: copyIcon,
-              onClick: () => manager.onClone(t)
-            },
-            {
-              label: t.canEdit ? 'Edit' : 'View',
-              glyph: t.canEdit ? pencilIcon : eyeIcon,
-              onClick: () => manager.setEditingTemplate(t)
-            },
-            t.canEdit ? {
-              label: 'Delete',
-              glyph: trashIcon,
-              danger: true,
-              className: 'removeOption',
-              onClick: () => manager.onDelete(t.id)
-            } : null
-          ].filter(item => !!item) as readonly ListDataItem[]}
-        />
-      )
+    if (authorFilter.length > 0) {
+      onSetAuthorFilter([]);
     }
-  ] : [
-    {
-      id: 'favorite', width: '32px',
-      getValue: (t: Template) => {
-        const isFav = favorites.includes(t.id);
-        return (
-          <Button 
-            icon={isFav ? starFilledIcon : starIcon}
-            className={isFav ? 'favorite-active' : 'favorite-inactive'}
-            style={{cursor: 'default', pointerEvents: 'none'}}
-          />
-        );
-      }
-    },
-    {
-      id: 'name', title: 'Name', sortable: true, width: '300px',
-      getValue: (t: Template) => (
-        <div className="nameWrapper" style={{maxWidth: '300px', overflow: 'hidden'}}>
-          <Text className="nameText" title={t.name}>{t.name}</Text>
-          {t.isPrivate && (
-            <Icon 
-              glyph={lockIcon} 
-              title="Private" 
-              className="nameIcon"
-              style={{color: 'var(--ring-secondary-color)'}}
-            />
-          )}
-        </div>
-      )
-    },
-    {
-      id: 'author', title: 'Author', sortable: true, width: '150px',
-      getValue: (t: Template) => (
-        <Text style={{color: 'var(--ring-secondary-color)'}}>{t.author?.login || 'n/a'}</Text>
-      )
-    },
-    {
-      id: 'project', title: 'Project', width: '200px',
-      getValue: (t: Template) => (
-        <Select<SelectedItem>
-          type={SelectType.INLINE} 
-          data={projectOptions}
-          selected={t.projectId ? {key: t.projectId, label: t.projectName || t.projectId} as SelectedItem : {key: 'all', label: 'All projects'} as SelectedItem}
-          disabled
-          maxHeight={400}
-        />
-      )
-    },
-    {
-      id: 'actions', width: '40px',
-      getValue: (t: Template) => (
-        <DropdownMenu
-          anchor={<Button icon={moreOptionsIcon}/>}
-          data={[
-            {
-              label: 'Restore',
-              glyph: historyIcon,
-              onClick: () => manager.onRestore(t.id)
-            },
-            {
-              label: 'Delete Forever',
-              glyph: trashIcon,
-              danger: true,
-              className: 'removeOption',
-              onClick: () => manager.onPermanentDelete(t.id)
-            }
-          ]}
-        />
-      )
+    if (projectFilter.length > 0) {
+      onSetProjectFilter([]);
     }
-  ];
+  }, [visibleData.length, filter, authorFilter, projectFilter, templates, deletedTemplates, viewMode,
+    onSetAuthorFilter, onSetProjectFilter]);
+
+  const {onToggleFavorite, onClone, setEditingTemplate, onDelete, onRestore, onPermanentDelete} = manager;
+  const columns = useMemo(() => buildColumns({
+    favorites, projects, projectOptions, selectedProjects, selectedParents, articlesByProject,
+    onToggleFavorite, onProjectSelect, onParentSelect, onLoadArticles, onCreateArticle,
+    onClone, onEdit: setEditingTemplate, onDelete, onRestore, onPermanentDelete
+  }, viewMode), [
+    favorites, projects, projectOptions, selectedProjects, selectedParents, articlesByProject,
+    onToggleFavorite, onProjectSelect, onParentSelect, onLoadArticles, onCreateArticle,
+    onClone, setEditingTemplate, onDelete, onRestore, onPermanentDelete, viewMode
+  ]);
 
   if (manager.loading) {
     return <LoaderInline/>;
   }
+
   if (manager.editingTemplate) {
     return (
-      <TemplateEditor 
-        template={manager.editingTemplate} 
+      <TemplateEditor
+        template={manager.editingTemplate}
         onSave={manager.onSave}
-        onCancel={() => manager.setEditingTemplate(null)}
-        onChange={manager.setEditingTemplate} 
-        onDelete={manager.onDelete}
+        onCancel={() => setEditingTemplate(null)}
+        onChange={setEditingTemplate}
+        onDelete={onDelete}
         projects={projects}
         isReadOnly={manager.editingTemplate.id ? !manager.editingTemplate.canEdit : false}
       />
@@ -435,16 +224,16 @@ const AppComponent: React.FC = () => {
   return (
     <div className="widget">
       <TemplateToolbar
-        viewMode={viewMode} 
-        onAdd={() => manager.setEditingTemplate({isPrivate: true})}
-        onImport={manager.onImport} 
+        viewMode={viewMode}
+        onAdd={() => setEditingTemplate({isPrivate: true})}
+        onImport={manager.onImport}
         onShowDeleted={() => manager.setViewMode('deleted')}
         onBackToList={() => manager.setViewMode('active')}
-        onBulkDelete={manager.onBulkDelete} 
+        onBulkDelete={manager.onBulkDelete}
         onBulkRestore={manager.onBulkRestore}
         selectedCount={manager.selection.getSelected().size}
         purgeIntervalDays={manager.settings?.purgeIntervalDays}
-        filter={filter} 
+        filter={filter}
         onFilterChange={manager.setFilter}
         showFavoritesOnly={showFavoritesOnly}
         onToggleShowFavorites={manager.onToggleShowFavorites}
@@ -457,19 +246,17 @@ const AppComponent: React.FC = () => {
       />
       <Table
         className="templateTable"
-        data={visibleData} 
-        columns={columns} 
+        data={visibleData}
+        columns={columns}
         selection={manager.selection}
-        onSelect={manager.setSelection} 
-        sortKey={manager.sortKey}
-        sortOrder={manager.sortOrder}
+        onSelect={setSelection}
+        sortKey={sortKey}
+        sortOrder={sortOrder}
         onSort={manager.onSort}
         getItemKey={item => item.id}
         renderEmpty={() => (
-          <div style={{padding: '16px', textAlign: 'center'}}>
-            <Text>
-              {manager.viewMode === 'active' ? 'No templates found.' : 'No deleted templates found.'}
-            </Text>
+          <div style={EMPTY_STYLE}>
+            <Text>{viewMode === 'active' ? 'No templates found.' : 'No deleted templates found.'}</Text>
           </div>
         )}
       />

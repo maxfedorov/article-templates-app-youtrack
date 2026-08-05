@@ -38,6 +38,8 @@ export interface ArticleRef {
   url: string;
   summary: string;
   content: string;
+  /** The user who created the article or draft. Named `author`, not `reporter`, unlike an issue. */
+  author?: UserRef | null;
   project?: ProjectRef;
   parentArticle?: ArticleRef | null;
 }

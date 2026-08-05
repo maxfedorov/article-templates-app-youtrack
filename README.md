@@ -45,8 +45,7 @@ src/
 ```
 
 Route files keep only their `handle` body after the build, so all reusable logic lives in
-`src/backend/utils/*`. See [APP_GUIDE_EN.md](APP_GUIDE_EN.md) for the full architecture
-([APP_GUIDE_RU.md](APP_GUIDE_RU.md) in Russian).
+`src/backend/utils/*`.
 
 ## Development
 

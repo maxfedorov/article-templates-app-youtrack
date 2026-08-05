@@ -130,7 +130,6 @@ export const templateAuthorSchema = z.object({
   id: z.string().optional(),
   login: z.string().optional(),
   fullName: z.string().optional(),
-  email: z.string().optional(),
 });
 
 export const templateSchema = z.object({

@@ -14,7 +14,6 @@ export type TemplateAuthor = {
   id?: string;
   login?: string;
   fullName?: string;
-  email?: string;
 };
 
 /**

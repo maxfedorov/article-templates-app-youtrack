@@ -7,7 +7,7 @@
  * every module-level declaration, so all reusable logic has to live in this module.
  */
 
-import type {Template} from '@/common/types';
+import type {Template, TemplateAuthor} from '@/common/types';
 import {PREDEFINED_TEMPLATES} from './predefined-templates';
 import type {ArticleRef, StoreData, TemplateStore, UserRef} from './store';
 import {createArticleDraft, createStore, findArticle, findProject, generateId} from './store';
@@ -48,11 +48,25 @@ export function checkProjectPermission(currentUser: UserRef, projectId: string |
   return currentUser.hasPermission('CREATE_ARTICLE', project);
 }
 
+/**
+ * Only the author fields the UI needs. Templates written by earlier versions also carry the
+ * author's email, which nothing reads -- it is dropped both on the way out and on the next save.
+ */
+const pickAuthorFields = (author: TemplateAuthor): TemplateAuthor => ({
+  id: author.id,
+  login: author.login,
+  fullName: author.fullName
+});
+
 /** Adds the computed `projectName` / `canEdit` fields, which are never persisted. */
 function processTemplateForResponse(template: Template, currentUser: UserRef): Template {
   const result: Template = {...template};
   delete result.projectName;
   delete result.canEdit;
+
+  if (template.author) {
+    result.author = pickAuthorFields(template.author);
+  }
 
   if (template.projectId) {
     const project = findProject(template.projectId);
@@ -146,18 +160,17 @@ function prepareTemplate(input: Template, old: Template | undefined, currentUser
     createdAt: base.createdAt || input.createdAt || Date.now(),
     usageCount: base.usageCount ?? input.usageCount ?? 0,
     isPrivate: input.isPrivate,
-    author: old ? base.author : getAuthor(currentUser),
+    author: old ? (base.author && pickAuthorFields(base.author)) : getAuthor(currentUser),
     lockedForOthers: input.lockedForOthers,
     projectId: input.projectId
   };
 }
 
-function getAuthor(user: UserRef): Template['author'] {
+function getAuthor(user: UserRef): TemplateAuthor {
   return {
     id: user?.ringId || user?.id || '',
     login: user?.login || '',
-    fullName: user?.fullName || '',
-    email: user?.email || ''
+    fullName: user?.fullName || ''
   };
 }
 

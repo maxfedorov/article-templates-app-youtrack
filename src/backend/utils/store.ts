@@ -48,7 +48,6 @@ export interface UserRef {
   ringId?: string;
   login: string;
   fullName: string;
-  email?: string;
   extensionProperties: Record<string, string | undefined>;
   hasPermission: (permission: string, project?: ProjectRef) => boolean;
 }

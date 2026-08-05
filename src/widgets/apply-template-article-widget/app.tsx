@@ -1,18 +1,26 @@
-import React, {memo, useCallback, useEffect, useState, useMemo} from 'react';
+/**
+ * The "Apply article template" menu item.
+ *
+ * Templates bound to another project are hidden, favourites float to the top, and applying one
+ * reloads the host page -- the article editor has no way of learning about the backend write.
+ */
+
+import React, {memo, useCallback, useEffect, useMemo, useState} from 'react';
 import Button from '@jetbrains/ring-ui-built/components/button/button';
 import ButtonSet from '@jetbrains/ring-ui-built/components/button-set/button-set';
-import Text from '@jetbrains/ring-ui-built/components/text/text';
 import LoaderInline from '@jetbrains/ring-ui-built/components/loader-inline/loader-inline';
-import API, {ApplyTemplateResponse, ArticleDataResponse, Template} from '../../api';
-import {ApplyTemplateForm, TemplateOption} from '../../components/ApplyTemplateForm';
+import Text from '@jetbrains/ring-ui-built/components/text/text';
 import type {AlertType} from '@jetbrains/ring-ui-built/components/alert/alert';
 import starIcon from '@jetbrains/icons/star-empty';
 import starFilledIcon from '@jetbrains/icons/star-filled';
-
-import './app.css';
+import type {Template} from '@/common/types';
+import {createTemplatesApi} from '../shared/api';
+import type {ApplyTemplateResult, ArticleData} from '../shared/api';
+import {ApplyTemplateForm} from '../shared/ApplyTemplateForm';
+import type {TemplateOption} from '../shared/ApplyTemplateForm';
 
 const host = await YTApp.register();
-const api = new API(host);
+const api = createTemplatesApi(host);
 
 /**
  * The widget is shown both for drafts (`entity.draft`) and for published articles opened in the
@@ -38,7 +46,7 @@ function trimmed(value: string | undefined): string {
   return value ? value.trim() : '';
 }
 
-function isDraftEmpty(article: ArticleDataResponse | null): boolean {
+function isDraftEmpty(article: ArticleData | null): boolean {
   if (!article) {
     return true;
   }
@@ -46,11 +54,11 @@ function isDraftEmpty(article: ArticleDataResponse | null): boolean {
 }
 
 /** An empty template summary must not wipe the title the user has already typed. */
-function resolveSummary(template: Template, article: ArticleDataResponse | null): string {
+function resolveSummary(template: Template, article: ArticleData | null): string {
   return template.summary || article?.summary || '';
 }
 
-function resolveUrl(result: ApplyTemplateResponse, article: ArticleDataResponse | null): string | undefined {
+function resolveUrl(result: ApplyTemplateResult, article: ArticleData | null): string | undefined {
   return result?.url || article?.url;
 }
 
@@ -82,12 +90,11 @@ async function trackUsage(templateId: string): Promise<void> {
   try {
     await api.incrementTemplateUsage(templateId);
   } catch (e) {
-    // eslint-disable-next-line no-console
     console.error('Failed to update template usage counter', e);
   }
 }
 
-async function applyToArticle(template: Template, article: ArticleDataResponse | null): Promise<void> {
+async function applyToArticle(template: Template, article: ArticleData | null): Promise<void> {
   const result = await api.applyTemplate(resolveSummary(template, article), template.content || '');
   await trackUsage(template.id);
   host.alert('Template applied', 'success' as AlertType.SUCCESS);
@@ -106,7 +113,7 @@ const LoadError: React.FunctionComponent<{onClose: () => void}> = ({onClose}) =>
 );
 
 const AppComponent: React.FunctionComponent = () => {
-  const [article, setArticle] = useState<ArticleDataResponse | null>(null);
+  const [article, setArticle] = useState<ArticleData | null>(null);
   const [templates, setTemplates] = useState<Template[]>([]);
   const [favorites, setFavorites] = useState<string[]>([]);
   const [selected, setSelected] = useState<TemplateOption | null>(null);
@@ -124,10 +131,9 @@ const AppComponent: React.FunctionComponent = () => {
           api.getUserPreferences()
         ]);
         setArticle(articleData);
-        setTemplates(templatesData || []);
+        setTemplates(templatesData);
         setFavorites(prefs?.favorites || []);
       } catch (e) {
-        // eslint-disable-next-line no-console
         console.error('Failed to load initial data', e);
         setLoadError(true);
       } finally {
@@ -147,7 +153,6 @@ const AppComponent: React.FunctionComponent = () => {
     try {
       await applyToArticle(template, article);
     } catch (e) {
-      // eslint-disable-next-line no-console
       console.error('Failed to apply template', e);
       host.alert('Failed to apply template', 'error' as AlertType.ERROR);
     } finally {

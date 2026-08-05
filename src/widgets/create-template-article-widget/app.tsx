@@ -1,16 +1,30 @@
+/**
+ * The "Create article template" menu item.
+ *
+ * The form opens prefilled with the current article, so saving a template is one click away; the
+ * fields stay editable because the article title rarely makes a good template name as is.
+ */
+
 import React, {memo, useCallback, useEffect, useState} from 'react';
 import Button from '@jetbrains/ring-ui-built/components/button/button';
 import ButtonSet from '@jetbrains/ring-ui-built/components/button-set/button-set';
 import Input, {Size} from '@jetbrains/ring-ui-built/components/input/input';
-import Toggle from '@jetbrains/ring-ui-built/components/toggle/toggle';
-import Select from '@jetbrains/ring-ui-built/components/select/select';
 import LoaderInline from '@jetbrains/ring-ui-built/components/loader-inline/loader-inline';
+import Select from '@jetbrains/ring-ui-built/components/select/select';
 import Text from '@jetbrains/ring-ui-built/components/text/text';
-import API, {Template, YTProject} from '../../api';
-import type {AlertType} from "@jetbrains/ring-ui-built/components/alert/alert";
+import Toggle from '@jetbrains/ring-ui-built/components/toggle/toggle';
+import type {AlertType} from '@jetbrains/ring-ui-built/components/alert/alert';
+import type {YTProject} from '@/common/types';
+import {createTemplatesApi} from '../shared/api';
 
 const host = await YTApp.register();
-const api = new API(host);
+const api = createTemplatesApi(host);
+
+const SELECT_MAX_HEIGHT = 400;
+
+const WIDGET_STYLE = {padding: '16px', display: 'flex', flexDirection: 'column' as const, gap: '16px'};
+const LABEL_STYLE = {fontSize: '12px', color: 'var(--ring-secondary-color)', marginBottom: '4px'};
+const HINT_STYLE = {fontSize: '12px', color: 'var(--ring-secondary-color)'};
 
 const AppComponent: React.FunctionComponent = () => {
   const [name, setName] = useState('');
@@ -26,18 +40,14 @@ const AppComponent: React.FunctionComponent = () => {
   useEffect(() => {
     async function loadInitialData() {
       try {
-        const [article, projectsData] = await Promise.all([
-          api.getArticleData(),
-          api.getProjects()
-        ]);
-        
+        const [article, projectsData] = await Promise.all([api.getArticleData(), api.getProjects()]);
+
         setName(article.summary || '');
         setSummary(article.summary || '');
         setContent(article.content || '');
         setProjectId(article.projectId);
-        setProjects(projectsData || []);
+        setProjects(projectsData);
       } catch (e) {
-        // eslint-disable-next-line no-console
         console.error('Failed to load initial data', e);
         host.alert('Failed to load initial data', 'error' as AlertType.ERROR);
       } finally {
@@ -55,7 +65,7 @@ const AppComponent: React.FunctionComponent = () => {
 
     setSaving(true);
     try {
-      const newTemplate: Omit<Template, 'id'> = {
+      await api.saveTemplate({
         name: name.trim(),
         summary,
         content,
@@ -64,13 +74,10 @@ const AppComponent: React.FunctionComponent = () => {
         projectId,
         createdAt: Date.now(),
         usageCount: 0
-      };
-      
-      await api.addTemplate(newTemplate);
+      });
       host.alert('Template created', 'success' as AlertType.SUCCESS);
       host.closeWidget();
     } catch (e) {
-      // eslint-disable-next-line no-console
       console.error('Failed to create template', e);
       host.alert('Failed to create template', 'error' as AlertType.ERROR);
     } finally {
@@ -82,6 +89,7 @@ const AppComponent: React.FunctionComponent = () => {
     return <LoaderInline/>;
   }
 
+  // A template without a project is offered to every project the user can create articles in.
   const projectOptions = [
     {label: 'All projects', key: 'all'},
     ...projects.map(p => ({label: p.name, key: p.shortName || p.id}))
@@ -89,7 +97,7 @@ const AppComponent: React.FunctionComponent = () => {
   const selectedProject = projectOptions.find(p => p.key === (projectId || 'all')) || projectOptions[0];
 
   return (
-    <div className="widget" style={{padding: '16px', display: 'flex', flexDirection: 'column', gap: '16px'}}>
+    <div className="widget" style={WIDGET_STYLE}>
       <Input
         label="Template Name"
         value={name}
@@ -115,49 +123,34 @@ const AppComponent: React.FunctionComponent = () => {
       />
 
       <div>
-        <div style={{fontSize: '12px', color: 'var(--ring-secondary-color)', marginBottom: '4px'}}>{'Project'}</div>
+        <div style={LABEL_STYLE}>{'Project'}</div>
         <Select
           data={projectOptions}
           selected={selectedProject}
           onSelect={item => item && setProjectId(item.key === 'all' ? undefined : item.key)}
           size={Size.FULL}
           filter
-          maxHeight={400}
+          maxHeight={SELECT_MAX_HEIGHT}
         />
       </div>
 
-      <Toggle
-        checked={isPrivate}
-        onChange={e => setIsPrivate(e.target.checked)}
-      >
+      <Toggle checked={isPrivate} onChange={e => setIsPrivate(e.target.checked)}>
         {'Private template'}
       </Toggle>
 
-      <Toggle
-        checked={lockedForOthers}
-        onChange={e => setLockedForOthers(e.target.checked)}
-      >
-        {lockedForOthers 
-          ? 'Only author and admins can edit' 
-          : 'Anyone can edit'}
+      <Toggle checked={lockedForOthers} onChange={e => setLockedForOthers(e.target.checked)}>
+        {lockedForOthers ? 'Only author and admins can edit' : 'Anyone can edit'}
       </Toggle>
 
-      <Text info style={{fontSize: '12px', color: 'var(--ring-secondary-color)'}}>
+      <Text info style={HINT_STYLE}>
         {'Please note: Article attachments will not be saved in the template.'}
       </Text>
 
       <ButtonSet>
-        <Button 
-          primary 
-          onClick={onSave} 
-          disabled={!name.trim() || saving}
-          loader={saving}
-        >
+        <Button primary onClick={onSave} disabled={!name.trim() || saving} loader={saving}>
           {'Create template'}
         </Button>
-        <Button onClick={() => host.closeWidget()}>
-          {'Cancel'}
-        </Button>
+        <Button onClick={() => host.closeWidget()}>{'Cancel'}</Button>
       </ButtonSet>
     </div>
   );

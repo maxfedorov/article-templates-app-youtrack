@@ -4,13 +4,16 @@
       "entityType": "AppGlobalStorage",
       "properties": {
         "templates": {
-          "type": "string"
+          "type": "string",
+          "multi": false
         },
         "deletedTemplates": {
-          "type": "string"
+          "type": "string",
+          "multi": false
         },
         "initialImportDone": {
-          "type": "string"
+          "type": "string",
+          "multi": false
         }
       }
     },
@@ -18,22 +21,28 @@
       "entityType": "User",
       "properties": {
         "templates": {
-          "type": "string"
+          "type": "string",
+          "multi": false
         },
         "deletedTemplates": {
-          "type": "string"
+          "type": "string",
+          "multi": false
         },
         "favorites": {
-          "type": "string"
+          "type": "string",
+          "multi": false
         },
         "showFavoritesOnly": {
-          "type": "string"
+          "type": "string",
+          "multi": false
         },
         "authorFilter": {
-          "type": "string"
+          "type": "string",
+          "multi": false
         },
         "projectFilter": {
-          "type": "string"
+          "type": "string",
+          "multi": false
         }
       }
     }

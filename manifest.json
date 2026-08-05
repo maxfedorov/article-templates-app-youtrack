@@ -52,7 +52,7 @@
         "UPDATE_ARTICLE"
       ],
       "expectedDimensions": {
-        "height": 300
+        "height": 400
       }
     }
   ]

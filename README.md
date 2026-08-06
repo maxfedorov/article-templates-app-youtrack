@@ -25,6 +25,21 @@ generated, type-safe API client.
 | Create article template | `ARTICLE_OPTIONS_MENU_ITEM` | `!entity.draft && !entity.isEditing`  |
 | Apply article template  | `ARTICLE_OPTIONS_MENU_ITEM` | `entity.draft \|\| entity.isEditing`  |
 
+## Permissions
+
+The template endpoints are global and run with the app's rights, so authorization is enforced in the
+backend (`src/backend/utils/templates.ts`):
+
+| Action | Who is allowed |
+|--------|----------------|
+| Create a template / apply a template / track usage | Any user with `CREATE_ARTICLE` (in the target project, or anywhere for a global template). Guests and users with no article role cannot. |
+| Edit or delete an **unlocked** template | Anyone who can see and use it — same `CREATE_ARTICLE` rule as above. |
+| Edit or delete a **locked** template ("Only author and admins can edit") | The author, an admin of the template's project (`UPDATE_PROJECT`), or a global app admin (`ADMIN_UPDATE_APP`). A template with no project answers to an admin of any project. |
+| Import the predefined templates | A project admin (`UPDATE_PROJECT` in any project) or an app admin. Others get a clear message. |
+| Attach a parent article to a new draft | The caller must be able to read that article (`READ_ARTICLE`). |
+
+Authorship is matched by the immutable user id, not the login.
+
 ## Project Structure
 
 ```text

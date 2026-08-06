@@ -9,31 +9,95 @@
 
 import type {Template, TemplateAuthor} from '@/common/types';
 import {PREDEFINED_TEMPLATES} from './predefined-templates';
-import type {ArticleRef, StoreData, TemplateStore, UserRef} from './store';
+import type {ArticleRef, ProjectRef, StoreData, TemplateStore, UserRef} from './store';
 import {createArticleDraft, createStore, findArticle, findProject, generateId} from './store';
 import type {OpResult, WithError} from './result';
 import {fail, ok} from './result';
 
-const ERR_PROJECT_ACCESS = 'You do not have permission to access the project of this template';
 const ERR_ID_REQUIRED = 'ID is required';
 const ERR_IDS_REQUIRED = 'IDs array is required';
 const ERR_NOT_FOUND = 'Template not found';
 const ERR_NOT_IN_TRASH = 'Template not found in trash';
+const ERR_NO_CREATE = 'You do not have permission to create templates';
+const ERR_IMPORT_ADMIN = 'Only project administrators can import predefined templates';
 
-/** A user may edit a locked template only if they authored it or administer apps. */
-export function canEditTemplate(template: Template, currentUser: UserRef): boolean {
-  if (!template.lockedForOthers) {
-    return true;
-  }
-  const authorId = template.author?.id;
-  if (authorId && authorId === currentUser.ringId) {
-    return true;
-  }
+/**
+ * `hasPermission` throws on an unknown key, so every call is wrapped: a permission the caller does
+ * not hold must read as `false`, never bubble up as a 500.
+ */
+function hasPermission(user: UserRef, permission: string, project?: ProjectRef): boolean {
   try {
-    return currentUser.hasPermission('ADMIN_UPDATE_APP');
+    return user.hasPermission(permission, project);
   } catch {
     return false;
   }
+}
+
+/**
+ * The base capability for touching shared template storage at all: the caller must be able to
+ * create articles somewhere. With no project argument YouTrack answers "in any accessible scope",
+ * so this is `false` for guests and for users with no article-creation role anywhere.
+ */
+export function canManageTemplates(user: UserRef): boolean {
+  return hasPermission(user, 'CREATE_ARTICLE');
+}
+
+/** Global app administrators bypass every authorship/lock check so a template is never orphaned. */
+export function isAppAdmin(user: UserRef): boolean {
+  return hasPermission(user, 'ADMIN_UPDATE_APP');
+}
+
+/**
+ * Whether the caller may administer a template regardless of authorship or the lock flag. A
+ * project-bound template answers to an admin of that project (`UPDATE_PROJECT` on it); a template
+ * with no project answers to an admin of any project. A global app admin always qualifies.
+ */
+export function isTemplateAdmin(user: UserRef, template: Template): boolean {
+  if (isAppAdmin(user)) {
+    return true;
+  }
+  if (template.projectId) {
+    const project = findProject(template.projectId);
+    return !!project && hasPermission(user, 'UPDATE_PROJECT', project);
+  }
+  return hasPermission(user, 'UPDATE_PROJECT');
+}
+
+/**
+ * Seeding the built-in templates into shared storage is an administrative action, opened up to any
+ * project administrator (they already curate templates for their project) as well as app admins.
+ */
+export function canImportPredefined(user: UserRef): boolean {
+  return isAppAdmin(user) || hasPermission(user, 'UPDATE_PROJECT');
+}
+
+/**
+ * Whether the caller wrote the template. `author.id` stores the ring id (see {@link getAuthor}).
+ * A login can be reassigned to a different person, so only the immutable id is trusted here.
+ */
+export function isTemplateAuthor(template: Template, user: UserRef): boolean {
+  const author = template.author;
+  return !!author?.id && !!user.ringId && author.id === user.ringId;
+}
+
+/**
+ * Who may modify (edit, trash, restore, purge) an existing template. Extension endpoints run with
+ * the app's rights, so this is the only thing standing between a stranger and someone else's
+ * template:
+ * - a template admin (see {@link isTemplateAdmin}) or the author may always change it;
+ * - while the author leaves it unlocked, anyone who can see and use it may edit it too -- the base
+ *   article-creation capability plus access to the bound project, which excludes guests and users
+ *   with no article role anywhere;
+ * - once `lockedForOthers` is set, only the author and admins get through.
+ */
+export function canModifyTemplate(template: Template, user: UserRef): boolean {
+  if (isTemplateAdmin(user, template) || isTemplateAuthor(template, user)) {
+    return true;
+  }
+  if (template.lockedForOthers) {
+    return false;
+  }
+  return canManageTemplates(user) && checkProjectPermission(user, template.projectId);
 }
 
 /** Templates bound to a project are only visible to users who can create articles in it. */
@@ -45,7 +109,7 @@ export function checkProjectPermission(currentUser: UserRef, projectId: string |
   if (!project) {
     return false;
   }
-  return currentUser.hasPermission('CREATE_ARTICLE', project);
+  return hasPermission(currentUser, 'CREATE_ARTICLE', project);
 }
 
 /**
@@ -75,7 +139,7 @@ function processTemplateForResponse(template: Template, currentUser: UserRef): T
       result.projectId = project.shortName;
     }
   }
-  result.canEdit = canEditTemplate(template, currentUser);
+  result.canEdit = canModifyTemplate(template, currentUser);
   return result;
 }
 
@@ -207,14 +271,19 @@ function saveDenialReason(
   input: Template,
   old: Template | undefined
 ): {code: number; error: string} | null {
-  if (old?.projectId && !checkProjectPermission(user, old.projectId)) {
-    return {code: 403, error: ERR_PROJECT_ACCESS};
+  // Editing an existing template is gated by {@link canModifyTemplate} (author/admin, or anyone
+  // who can see and use it while it is unlocked).
+  if (old) {
+    if (!canModifyTemplate(old, user)) {
+      return {code: 403, error: 'You do not have permission to edit this template'};
+    }
+  } else if (!canManageTemplates(user)) {
+    // Creating a new one: the caller must be able to create articles somewhere.
+    return {code: 403, error: ERR_NO_CREATE};
   }
+  // The target project (whether new or unchanged) must be one the caller can create articles in.
   if (input.projectId && !checkProjectPermission(user, input.projectId)) {
     return {code: 403, error: 'You do not have permission to use the selected project'};
-  }
-  if (old && !canEditTemplate(old, user)) {
-    return {code: 403, error: 'You do not have permission to edit this template'};
   }
   return null;
 }
@@ -231,10 +300,7 @@ export function deleteTemplate(ctx: unknown, id: string | undefined): OpResult<{
   if (!template) {
     return fail(404, ERR_NOT_FOUND);
   }
-  if (template.projectId && !checkProjectPermission(store.currentUser, template.projectId)) {
-    return fail(403, ERR_PROJECT_ACCESS);
-  }
-  if (!canEditTemplate(template, store.currentUser)) {
+  if (!canModifyTemplate(template, store.currentUser)) {
     return fail(403, 'You do not have permission to delete this template');
   }
 
@@ -264,8 +330,7 @@ export function bulkDeleteTemplates(
   const {shared, private: priv, deletedShared, deletedPrivate} = store.purge(true);
   const user = store.currentUser;
   const requested = new Set(ids);
-  const allowed = (t: Template) =>
-    requested.has(t.id) && checkProjectPermission(user, t.projectId) && canEditTemplate(t, user);
+  const allowed = (t: Template) => requested.has(t.id) && canModifyTemplate(t, user);
 
   const fromShared = shared.filter(allowed);
   const fromPrivate = priv.filter(allowed);
@@ -299,10 +364,7 @@ export function restoreTemplate(ctx: unknown, id: string | undefined): OpResult<
   if (!template) {
     return fail(404, ERR_NOT_IN_TRASH);
   }
-  if (template.projectId && !checkProjectPermission(store.currentUser, template.projectId)) {
-    return fail(403, ERR_PROJECT_ACCESS);
-  }
-  if (!canEditTemplate(template, store.currentUser)) {
+  if (!canModifyTemplate(template, store.currentUser)) {
     return fail(403, 'You do not have permission to restore this template');
   }
 
@@ -329,8 +391,7 @@ export function bulkRestoreTemplates(
   const {shared, private: priv, deletedShared, deletedPrivate} = store.purge(true);
   const user = store.currentUser;
   const requested = new Set(ids);
-  const allowed = (t: Template) =>
-    requested.has(t.id) && checkProjectPermission(user, t.projectId) && canEditTemplate(t, user);
+  const allowed = (t: Template) => requested.has(t.id) && canModifyTemplate(t, user);
 
   const fromShared = deletedShared.filter(allowed);
   const fromPrivate = deletedPrivate.filter(allowed);
@@ -365,10 +426,7 @@ export function permanentDeleteTemplate(
   if (!template) {
     return fail(404, ERR_NOT_FOUND);
   }
-  if (template.projectId && !checkProjectPermission(store.currentUser, template.projectId)) {
-    return fail(403, ERR_PROJECT_ACCESS);
-  }
-  if (!canEditTemplate(template, store.currentUser)) {
+  if (!canModifyTemplate(template, store.currentUser)) {
     return fail(403, 'You do not have permission to permanently delete this template');
   }
 
@@ -388,8 +446,14 @@ export function permanentDeleteTemplate(
  * Copies the predefined templates into shared storage, skipping the ones whose name is already
  * taken. Each copy gets a fresh id so it can be edited independently of the built-in definition.
  */
-export function importPredefinedTemplates(ctx: unknown): {success: boolean; importedCount: number} {
+export function importPredefinedTemplates(
+  ctx: unknown
+): OpResult<{success?: boolean; importedCount?: number} & WithError> {
   const store = createStore(ctx);
+  // Bulk-seeds shared storage for the whole instance, so it is reserved for project/app admins.
+  if (!canImportPredefined(store.currentUser)) {
+    return fail(403, ERR_IMPORT_ADMIN);
+  }
   const {shared} = store.purge(true);
   const existing = new Set(shared.map(t => t.name.toLowerCase()));
   const toAdd = PREDEFINED_TEMPLATES
@@ -399,7 +463,7 @@ export function importPredefinedTemplates(ctx: unknown): {success: boolean; impo
   if (toAdd.length) {
     store.save({shared: [...shared, ...toAdd], initialImportDone: true});
   }
-  return {success: true, importedCount: toAdd.length};
+  return ok({success: true, importedCount: toAdd.length});
 }
 
 /** Bumps the usage counter of a template wherever it is stored. */
@@ -429,7 +493,11 @@ export function trackTemplateUsage(ctx: unknown, id: string | undefined): OpResu
   if (!id) {
     return fail(400, ERR_ID_REQUIRED);
   }
-  incrementTemplateUsage(createStore(ctx), id);
+  const store = createStore(ctx);
+  if (!canManageTemplates(store.currentUser)) {
+    return fail(403, ERR_NO_CREATE);
+  }
+  incrementTemplateUsage(store, id);
   return ok({success: true});
 }
 
@@ -458,19 +526,25 @@ export function createDraftFromTemplate(
   if (!project) {
     return fail(404, `Project not found: ${input.projectKey}`);
   }
-  if (!store.currentUser.hasPermission('CREATE_ARTICLE', project)) {
+  if (!hasPermission(store.currentUser, 'CREATE_ARTICLE', project)) {
     return fail(403, `You do not have permission to create articles in project: ${input.projectKey}`);
+  }
+
+  // Resolve the parent before creating the draft: a caller who cannot read the parent must not be
+  // able to graft their new draft under it, and failing here leaves no orphan draft behind.
+  let parent: ArticleRef | null = null;
+  if (input.parentArticleId) {
+    parent = findArticle(input.parentArticleId);
+    if (parent && (!parent.project || !hasPermission(store.currentUser, 'READ_ARTICLE', parent.project))) {
+      return fail(403, 'You do not have permission to use the selected parent article');
+    }
   }
 
   const draft: ArticleRef = createArticleDraft(project, store.currentUser);
   draft.summary = input.summary || '';
   draft.content = input.content || '';
-
-  if (input.parentArticleId) {
-    const parent = findArticle(input.parentArticleId);
-    if (parent) {
-      draft.parentArticle = parent;
-    }
+  if (parent) {
+    draft.parentArticle = parent;
   }
 
   incrementTemplateUsage(store, input.templateId);

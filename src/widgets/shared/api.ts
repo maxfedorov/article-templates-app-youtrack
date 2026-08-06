@@ -160,7 +160,9 @@ export class TemplatesApi {
   }
 
   async importPredefinedTemplates(): Promise<{importedCount: number}> {
-    return this.api.global['import-predefined-templates'].POST({});
+    const response = await this.api.global['import-predefined-templates'].POST({});
+    assertOk(response);
+    return {importedCount: response.importedCount ?? 0};
   }
 
   /** Creates an article draft from a template and counts the template as used. */

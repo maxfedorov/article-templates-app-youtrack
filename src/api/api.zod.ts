@@ -59,8 +59,9 @@ export const globalDeletedTemplatesGETReqSchema = z.object({
 });
 
 export const globalImportPredefinedTemplatesPOSTResSchema = z.object({
-  success: z.boolean(),
-  importedCount: z.number(),
+  success: z.boolean().optional(),
+  importedCount: z.number().optional(),
+  error: z.string().optional(),
 });
 
 export const globalPermanentTemplateDELETEReqSchema = z.object({

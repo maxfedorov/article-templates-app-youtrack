@@ -14,6 +14,38 @@ import type {HostAPI} from '../../../@types/globals';
 
 export type ViewMode = 'active' | 'deleted';
 
+/**
+ * Pulls the backend's reason out of whatever a failed call throws.
+ *
+ * `host.fetchApp` rejects a non-2xx response as `{data: <parsed body>, status, message}`, where the
+ * backend reason is in the body (`data.error`, e.g. "Only project administrators can import
+ * predefined templates") and `message` is only the generic HTTP status line ("403 Forbidden"). So
+ * the body reason must win over `message`. `assertOk`, by contrast, throws a real `Error` whose
+ * `message` already is the backend reason.
+ */
+function backendErrorMessage(e: unknown, fallback: string): string {
+  if (e && typeof e === 'object') {
+    const record = e as Record<string, unknown>;
+    const bodyError = record.data && typeof record.data === 'object'
+      ? (record.data as Record<string, unknown>).error
+      : record.data;
+    if (typeof bodyError === 'string' && bodyError) {
+      return bodyError;
+    }
+    if (typeof record.error === 'string' && record.error) {
+      return record.error;
+    }
+  }
+  // A real Error only reaches here from assertOk, so its message is the backend reason, not a status line.
+  if (e instanceof Error && e.message) {
+    return e.message;
+  }
+  if (typeof e === 'string' && e) {
+    return e;
+  }
+  return fallback;
+}
+
 export const useTemplateManager = (host: HostAPI, api: TemplatesApi) => {
   const [templates, setTemplates] = useState<Template[]>([]);
   const [deletedTemplates, setDeletedTemplates] = useState<Template[]>([]);
@@ -244,8 +276,10 @@ export const useTemplateManager = (host: HostAPI, api: TemplatesApi) => {
         host.alert('All predefined templates are already present', 'message' as AlertType.MESSAGE);
       }
     } catch (e) {
+      // The backend rejects non-admins with a specific reason ("Only project administrators can
+      // import predefined templates"); surface it verbatim instead of a generic failure.
       console.error('Failed to import templates', e);
-      host.alert('Failed to import templates', 'error' as AlertType.ERROR);
+      host.alert(backendErrorMessage(e, 'Failed to import templates'), 'error' as AlertType.ERROR);
     } finally {
       setLoading(false);
     }
